@@ -43,3 +43,52 @@ date = pd.tslib.Timestamp.now()
 timedelta = date - dataset['ENCOUNTER_END_DATE']
 # insert the days into the x dataset
 x['TIME_ENCOUNTER_END_DATE'] = timedelta.dt.days
+
+
+
+
+
+
+# code to obtain noshow frequency
+# loop trough all the IDs and find their frequency then calculate the average
+    for current_id in train_data['PATIENT_ID'].unique():
+
+        logging.getLogger('tab.regular').debug('patient id = {0}'.format(current_id))
+
+        # find the other encounter of the current patient
+        patient_encounters = train_data.index[train_data['PATIENT_ID'] == current_id]
+        total_patient_encounters = float(len(patient_encounters))
+
+        logging.getLogger('tab.regular').debug('number of records = {0}'.format(total_patient_encounters))
+
+        # calculate the average of the number of time the patient show up to an appointment
+        total_sum = train_data.loc[patient_encounters]['NOSHOW'].sum()
+        average_show_count = total_sum / total_patient_encounters
+
+        logging.getLogger('tab.regular.line').debug('average "no show" frequency = {0}'.format(average_show_count))
+
+        # insert the average for all the instances of that patient
+        train_data.set_value(patient_encounters, 'NOSHOW_FREQUENCY', average_show_count)
+
+        patient_record[current_id] = average_show_count
+
+    logging.getLogger('tab.regular').debug('Calculating no-show frequency (testing dataset)')
+
+    # loop through all the IDs in the test dataset, check if that ID was present in the
+    # training dataset, modify its frequency (if necessary), calculate the frequency's average
+    # and insert it in its history
+    for current_id in test_data['PATIENT_ID'].unique():
+
+        # obtaining the indices of that current patient_id in the test dataset
+        patient_encounters = test_data.index[test_data['PATIENT_ID'] == current_id]
+
+        logging.getLogger('tab.regular').debug('patient id = {0}'.format(current_id))
+
+        # check if ID in the training dataset
+        if current_id in patient_record.keys():
+            # obtain the training dataset values for that patient
+            average_show_count = patient_record[current_id]
+            logging.getLogger('tab.regular.line').debug('previous average "no show" frequency = {0}'.format(
+                average_show_count))
+
+            test_data.set_value(patient_encounters, 'NOSHOW_FREQUENCY', average_show_count)
