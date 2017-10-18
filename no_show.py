@@ -11,6 +11,7 @@ from utils.logger import logger_initialization
 from keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn import metrics
+from sklearn.preprocessing import LabelEncoder
 
 # seed for numpy and sklearn
 random_state = 7
@@ -33,13 +34,11 @@ def create_model():
 
 def calculate_show_frequency(train_data, test_data):
 
-    logging.getLogger('line.tab.regular').debug('Calculating show frequency')
-
-    logging.getLogger('line.tab.regular').debug('obtain frequency of "show" and "noshow" based on the patient\'s id')
+    logging.getLogger('tab.regular').debug('obtain frequency of "show" and "noshow" based on the patient\'s id')
     noshow_df = train_data.groupby(['PATIENT_ID', 'NOSHOW']).size().reset_index(name='NOSHOW_FREQUENCY')
     noshow_df['NOSHOW_FREQUENCY'] = noshow_df['NOSHOW_FREQUENCY'].astype(float)
 
-    logging.getLogger('line.tab.regular').debug('obtain the number of times a patient\'s record appears')
+    logging.getLogger('tab.regular').debug('obtain the number of times a patient\'s record appears')
     patient_df = train_data.groupby(['PATIENT_ID']).size().reset_index(name='PATIENT_FREQUENCY')
     # convert the patient's record frequency to a dictionary in order to insert it on the dataframe
     patient_dict = patient_df.set_index('PATIENT_ID')['PATIENT_FREQUENCY'].to_dict()
@@ -68,14 +67,16 @@ def calculate_show_frequency(train_data, test_data):
     train_data = train_data.drop(['PATIENT_ID', 'NOSHOW'], axis=1)
     test_data = test_data.drop(['PATIENT_ID', 'NOSHOW'], axis=1)
 
-    logging.getLogger('line.tab.regular').debug('Finished calculating show frequency')
+    logging.getLogger('tab.regular').debug('Finished calculating show frequency')
 
     return np.array(train_data), np.array(test_data)
 
 
 def grid_search(x_train, y_train, x_test, y_test):
 
-    logging.getLogger('regular.time').debug('adding the proportion or show_frequency column of how many times the patient has shown up to the appointment default = 1 i.e. it has a probability of showing up of 100\%')
+    msg = 'adding the proportion or show_frequency column of how many times the patient has shown up to the ' \
+          'appointment default = 1 i.e. it has a probability of showing up of 100\%'
+    logging.getLogger('regular.time').debug(msg)
     x_train = x_train.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_train)[0])))
     x_test = x_test.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_test)[0])))
 
@@ -131,7 +132,9 @@ def run_model(dataset, y):
     logging.getLogger('regular').info('creating training and testing dataset')
     x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42) 
 
-    logging.getLogger('regular.time').debug('adding the proportion or show_frequency column of how many times the patient has shown up to the appointment default = 1 i.e. it has a probability of showing up of 100\%')
+    msg = 'adding the proportion or show_frequency column of how many times the patient has shown up to the ' \
+          'appointment default = 1 i.e. it has a probability of showing up of 100\%'
+    logging.getLogger('regular.time').debug(msg)
     x_train = x_train.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_train)[0])))
     x_test = x_test.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_test)[0])))
 
@@ -157,20 +160,18 @@ def run_model(dataset, y):
 
 def cross_validation(dataset, y):
 
-    logging.getLogger('regular').info('define 10-fold cross validation test harnes')
+    logging.getLogger('regular').info('define 10-fold cross validation test harness')
     k_fold = StratifiedKFold(n_splits=10, shuffle=True, random_state=random_state)
     cv_scores = list()
     for train, test in k_fold.split(dataset, y):
-        logging.getLogger('regular.time').debug('adding the proportion or show_frequency column of how many times the patient has shown up to the appointment default = 1 i.e. it has a probability of showing up of 100\%')
+        msg = 'adding the proportion or show_frequency column of how many times the patient has shown up to the ' \
+              'appointment default = 1 i.e. it has a probability of showing up of 100\%'
+        logging.getLogger('regular.time').debug(msg)
         x_train = dataset.iloc[train].assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(dataset.iloc[train])[0])))
         x_test = dataset.iloc[test].assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(dataset.iloc[test])[0])))
 
         logging.getLogger('regular').info('calculate patient\'s show_frequency')
         x_train, x_test = calculate_show_frequency(train_data=x_train, test_data=x_test)
-
-        
-        import IPython
-        IPython.embed()
 
         logging.getLogger('regular').debug('creating and compiling model')
         model = Sequential()
@@ -223,17 +224,16 @@ def main():
     # labels 0 == SHOWUP, 1 == NOSHOW
     y = np.array(dataset['NOSHOW'])
 
-    dataset.drop(['ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'ENCOUNTER_CLASS',
-                  'ENCOUNTER_CLASS', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'NENCOUNTERTYPE', 'ENCOUNTER_PATIENT_AGE'],
-                 inplace=True, axis=1)
+    # dataset.drop(['ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'ENCOUNTER_CLASS',
+    #               'ENCOUNTER_CLASS', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'NENCOUNTERTYPE', 'ENCOUNTER_PATIENT_AGE'],
+    #              inplace=True, axis=1)
 
     # # encode class values as integers
-    # encoder = LabelEncoder()
-    # categorical_keys = ['ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'ENCOUNTER_CLASS',
-    #                     'ENCOUNTER_DEPARTMENT_SPECIALTY']
-    # for key in categorical_keys:
-    #     dataset[key] = encoder.fit_transform(dataset[key])
-    #
+    encoder = LabelEncoder()
+    categorical_keys = ['ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'ENCOUNTER_CLASS',
+                        'ENCOUNTER_DEPARTMENT_SPECIALTY']
+    for key in categorical_keys:
+        dataset[key] = encoder.fit_transform(dataset[key])
 
     # check if cross validation flag is set
     if args.cross_validation:
