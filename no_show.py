@@ -75,8 +75,7 @@ def calculate_show_frequency(train_data, test_data):
 
 def grid_search(x_train, y_train, x_test, y_test):
 
-    # adding the proportion or show_frequency column of how many times the patient has shown up to the appointment,
-    # default = 1 i.e. it has a probability of showing up of 100%
+    logging.getLogger('regular.time').debug('adding the proportion or show_frequency column of how many times the patient has shown up to the appointment default = 1 i.e. it has a probability of showing up of 100\%')
     x_train = x_train.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_train)[0])))
     x_test = x_test.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_test)[0])))
 
@@ -92,13 +91,18 @@ def grid_search(x_train, y_train, x_test, y_test):
 
     model = KerasClassifier(build_fn=create_model, verbose=0)
     # define the grid search parameters
-    batch_size = [10, 20, 40, 60, 80, 100]
+    # batch_size = [10, 20, 40, 60, 80, 100]
+    batch_size = [40, 60, 80, 100]
     epochs = [10, 50, 100]
     param_grid = dict(batch_size=batch_size, epochs=epochs)
 
     # create object model and start training
+    logging.getLogger('regular').debug('creating GridSearchCV object')
     grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=-1, verbose=True)
 
+    logging.getLogger('regular').info('training model')
+    logging.getLogger('regular').debug('training dataset size = {0}'.format(np.shape(x_train)))
+    logging.getLogger('regular').debug('testing dataset size = {0}'.format(np.shape(x_test)))
     grid_result = grid.fit(X=x_train, y=y_train)
 
     grid_score = grid_result.score(x_test, y_test)
@@ -125,49 +129,62 @@ def grid_search(x_train, y_train, x_test, y_test):
 def run_model(dataset, y):
 
     logging.getLogger('regular').info('creating training and testing dataset')
-    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42)
+    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42) 
 
-    # calculate patient's show_frequency
+    logging.getLogger('regular.time').debug('adding the proportion or show_frequency column of how many times the patient has shown up to the appointment default = 1 i.e. it has a probability of showing up of 100\%')
+    x_train = x_train.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_train)[0])))
+    x_test = x_test.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_test)[0])))
+
+    logging.getLogger('regular').info('calculate patient\'s show_frequency')
     x_train, x_test = calculate_show_frequency(train_data=x_train, test_data=x_test)
 
-    # create model
+    logging.getLogger('regular').debug('creating and compiling model')
     model = Sequential()
     model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
     model.add(Dense(8, activation='relu'))
     model.add(Dense(1, activation='sigmoid'))
-    # Compile model
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    # Fit the model
+
+    logging.getLogger('regular').info('training model')
+    logging.getLogger('regular').debug('training dataset size = {0}'.format(np.shape(x_train)))
+    logging.getLogger('regular').debug('testing dataset size = {0}'.format(np.shape(x_test)))
     model.fit(x_train, y_train, epochs=150, batch_size=10, verbose=1)
-    # evaluate the model
+
+    logging.getLogger('regular').info('evaluating model')
     scores = model.evaluate(x_test, y_test, verbose=0)
     logging.getLogger('regular').info("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
 
 
 def cross_validation(dataset, y):
 
-    # define 10-fold cross validation test harness
+    logging.getLogger('regular').info('define 10-fold cross validation test harnes')
     k_fold = StratifiedKFold(n_splits=10, shuffle=True, random_state=random_state)
     cv_scores = list()
     for train, test in k_fold.split(dataset, y):
-        # adding the proportion or show_frequency column of how many times the patient has shown up to the appointment,
-        # default = 1 i.e. it has a probability of showing up of 100%
+        logging.getLogger('regular.time').debug('adding the proportion or show_frequency column of how many times the patient has shown up to the appointment default = 1 i.e. it has a probability of showing up of 100\%')
         x_train = dataset.iloc[train].assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(dataset.iloc[train])[0])))
         x_test = dataset.iloc[test].assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(dataset.iloc[test])[0])))
 
-        # calculate patient's show_frequency
+        logging.getLogger('regular').info('calculate patient\'s show_frequency')
         x_train, x_test = calculate_show_frequency(train_data=x_train, test_data=x_test)
 
-        # create model
+        
+        import IPython
+        IPython.embed()
+
+        logging.getLogger('regular').debug('creating and compiling model')
         model = Sequential()
         model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
         model.add(Dense(8, activation='relu'))
         model.add(Dense(1, activation='sigmoid'))
-        # Compile model
         model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-        # Fit the model
+
+        logging.getLogger('regular').info('training model')
+        logging.getLogger('regular').debug('training dataset size = {0}'.format(np.shape(x_train)))
+        logging.getLogger('regular').debug('testing dataset size = {0}'.format(np.shape(x_test)))
         model.fit(x_train, y[train], epochs=150, batch_size=10, verbose=1)
-        # evaluate the model
+
+        logging.getLogger('regular').info('evaluating model')
         scores = model.evaluate(x_test, y[test], verbose=0)
         logging.getLogger('regular').info("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
         cv_scores.append(scores[1] * 100)
@@ -220,12 +237,15 @@ def main():
 
     # check if cross validation flag is set
     if args.cross_validation:
+        logging.getLogger('regular').info('running cross validation')
         cross_validation(dataset=dataset, y=y)
     if args.grid_search:
-        # logging.getLogger('regular').info('creating training and testing dataset')
+        logging.getLogger('regular').info('running grid search')
+        logging.getLogger('regular').info('creating training and testing dataset')
         x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.20, random_state=random_state)
         grid_search(x_train=x_train, y_train=y_train, x_test=x_test, y_test=y_test)
     else:
+        logging.getLogger('regular').info('running basic NN model')
         run_model(dataset=dataset, y=y)
 
 
