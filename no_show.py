@@ -6,7 +6,6 @@ from sklearn.model_selection import StratifiedKFold
 from keras.models import Sequential
 from keras.layers import Dense
 import numpy as np
-from sklearn.preprocessing import LabelEncoder
 import logging
 from utils.logger import logger_initialization
 from keras.wrappers.scikit_learn import KerasClassifier
@@ -123,6 +122,28 @@ def grid_search(x_train, y_train, x_test, y_test):
     logging.getLogger('line.regular.time.line').info('finished running.')
 
 
+def run_model(dataset, y):
+
+    logging.getLogger('regular').info('creating training and testing dataset')
+    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42)
+
+    # calculate patient's show_frequency
+    x_train, x_test = calculate_show_frequency(train_data=x_train, test_data=x_test)
+
+    # create model
+    model = Sequential()
+    model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
+    model.add(Dense(8, activation='relu'))
+    model.add(Dense(1, activation='sigmoid'))
+    # Compile model
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    # Fit the model
+    model.fit(x_train, y_train, epochs=150, batch_size=10, verbose=1)
+    # evaluate the model
+    scores = model.evaluate(x_test, y_test, verbose=0)
+    logging.getLogger('regular').info("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
+
+
 def cross_validation(dataset, y):
 
     # define 10-fold cross validation test harness
@@ -164,6 +185,7 @@ def main():
     parser.add_argument("-l", "--log", dest="logLevel", choices=['DEBUG', 'INFO', 'ERROR'], type=str.upper,
                         help="Set the logging level")
     parser.add_argument('-cv', '--cross_validation', action='store_true')
+    parser.add_argument('-gs', '--grid_search', action='store_true')
     args = parser.parse_args()
 
     logger_initialization(log_level=args.logLevel)
@@ -199,10 +221,12 @@ def main():
     # check if cross validation flag is set
     if args.cross_validation:
         cross_validation(dataset=dataset, y=y)
-    else:
+    if args.grid_search:
         # logging.getLogger('regular').info('creating training and testing dataset')
         x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.20, random_state=random_state)
         grid_search(x_train=x_train, y_train=y_train, x_test=x_test, y_test=y_test)
+    else:
+        run_model(dataset=dataset, y=y)
 
 
 if __name__ == '__main__':
