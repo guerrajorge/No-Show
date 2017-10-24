@@ -14,13 +14,16 @@ from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder
 
 # seed for numpy and sklearn
-random_state = 7
+random_state = 1
 np.random.seed(random_state)
 
 
 # Function to create model, required for KerasClassifier
 def create_model():
-    # create model
+    """
+    Neural Network model
+    :return: NN model
+    """
     model = Sequential()
     model.add(Dense(12, input_dim=8, activation='relu'))
     model.add(Dense(8, activation='relu'))
@@ -33,46 +36,97 @@ def create_model():
 
 
 def calculate_show_frequency(train_data, test_data):
+    """
+    This function will loop through all the unique PATIENT_IDs in the training dataset and calculate the SHOW frequency
+    at each new encounter. Then it will go through the testing dataset and it will set the latest SHOW_FREQUENCY of the
+    training data point based on the ENCOUNTER_APPOINTMENT_DATETIME
+    :param train_data: training dataset, needs two columns 'NOSHOW', 'SHOW_FREQUENCY' and
+    'ENCOUNTER_APPOINTMENT_DATETIME'
+    :param test_data: testing dataset
+    :return: a filled 'SHOW_FREQUENCY' column in the training and testing dataset.
+    """
 
-    logging.getLogger('tab.regular').debug('obtain frequency of "show" and "noshow" based on the patient\'s id')
-    noshow_df = train_data.groupby(['PATIENT_ID', 'NOSHOW']).size().reset_index(name='NOSHOW_FREQUENCY')
-    noshow_df['NOSHOW_FREQUENCY'] = noshow_df['NOSHOW_FREQUENCY'].astype(float)
+    logging.getLogger('tab.regular').debug('obtaining frequency of "SHOW" and "NOSHOW" based on the patient\'s id')
 
-    logging.getLogger('tab.regular').debug('obtain the number of times a patient\'s record appears')
-    patient_df = train_data.groupby(['PATIENT_ID']).size().reset_index(name='PATIENT_FREQUENCY')
-    # convert the patient's record frequency to a dictionary in order to insert it on the dataframe
-    patient_dict = patient_df.set_index('PATIENT_ID')['PATIENT_FREQUENCY'].to_dict()
+    unique_training_patient_ids = train_data['PATIENT_KEY'].unique()
+    msg = 'there are {0} unique patient IDs in the training dataset.'.format(len(unique_training_patient_ids))
+    logging.getLogger('tab.regular').debug(msg)
+    logging.getLogger('tab.regular').debug('The first 5 patients, in the training dataset, are: {0}'.format(
+        unique_training_patient_ids[:5]))
 
-    # insert the dictionary on the dataframe based on the PATIENT_ID and dictionaries' keys
-    noshow_df['PATIENT_FREQUENCY'] = noshow_df['PATIENT_ID'].map(patient_dict)
-    # change the type of the frequencies to float in order to divide them correctly
-    noshow_df[['NOSHOW_FREQUENCY', 'PATIENT_FREQUENCY']] = \
-        noshow_df[['NOSHOW_FREQUENCY', 'PATIENT_FREQUENCY']].astype(float)
-    logging.getLogger('obtain show and no-show proportions')
-    noshow_df['PATIENT_NOSHOW_FREQ'] = noshow_df['NOSHOW_FREQUENCY'].div(noshow_df['PATIENT_FREQUENCY'], axis=0)
+    # for each patient in the training dataset
+    logging.getLogger('tab.regular').debug('Processing patients in the training dataset')
+    for patient_key_index, patient_key in enumerate(unique_training_patient_ids):
+        msg = 'processing {0} out of {1} patients'.format(patient_key_index, len(unique_training_patient_ids)-1)
+        logging.getLogger('tab.tab.regular').debug(msg)
 
-    # only keep the probabilities of a patient showing up to the encounter and their PATIENT_ID
-    present_patients_probabilities = noshow_df.loc[noshow_df['NOSHOW'] == 0][['PATIENT_ID', 'PATIENT_NOSHOW_FREQ']]
-    present_patients_prob_dict = present_patients_probabilities.set_index('PATIENT_ID')['PATIENT_NOSHOW_FREQ'].to_dict()
+        # get the data point matching the current patient_key
+        patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_key]
 
-    # update train and test data information
-    train_data['SHOW_FREQUENCY'] = train_data['PATIENT_ID'].map(present_patients_prob_dict)
-    test_data['SHOW_FREQUENCY'] = test_data['PATIENT_ID'].map(present_patients_prob_dict)
+        # number of encounters processed
+        encounters_processed = 0.0
+        # total number of encounter that the patient showed up
+        total_shows = 0.0
+        # total number of encounter that the patient did not show up
+        total_no_shows = 0.0
+        # loop through each encounter
+        for index, data_point in patient_dataframe.iterrows():
+            encounters_processed += 1.0
+            # if the patient did not show up
+            if data_point['NOSHOW']:
+                total_no_shows += 1.0
+                prob = 1 - (total_no_shows / encounters_processed)
+            else:
+                total_shows += 1.0
+                prob = total_shows / encounters_processed
 
-    # if the patient has not being seeind in the training dataset, assume the patient will show-up: replace NaN with 1
-    test_data['SHOW_FREQUENCY'].fillna(value=1.0, inplace=True)
-    train_data['SHOW_FREQUENCY'].fillna(value=1.0, inplace=True)
+            # update the SHOW_FREQUENCY for the specific patient's based on the index processed
+            train_data.loc[index, 'SHOW_FREQUENCY'] = prob
 
-    # remove the PATIENT_ID and NOSHOW columns
-    train_data = train_data.drop(['PATIENT_ID', 'NOSHOW'], axis=1)
-    test_data = test_data.drop(['PATIENT_ID', 'NOSHOW'], axis=1)
+    unique_testing_patient_ids = test_data['PATIENT_KEY'].unique()
+    msg = 'there are {0} unique patient IDs in the training dataset.'.format(len(unique_testing_patient_ids))
+    logging.getLogger('line.tab.regular').debug(msg)
+    logging.getLogger('tab.regular').debug('The first 5 patients, in the testing dataset, are: {0}'.format(
+        unique_testing_patient_ids[:5]))
+
+    for patient_key in unique_testing_patient_ids:
+        # if the patient in the testing dataset is not in the training dataset, then continue to the next patient and
+        # do not modified the SHOW_FREQUENCY i.e. leave it to 100% chance of showing up
+        if patient_key not in train_data['PATIENT_KEY'].values:
+            continue
+
+        training_patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_key]
+        testing_patient_dataframe = test_data[test_data['PATIENT_KEY'] == patient_key]
+
+        for test_index, testing_patient in testing_patient_dataframe.iterrows():
+            last_encounter_time = pd.datetime(1, 1, 1, 7, 0, 0)
+            show_frequency = ''
+            for _, training_patient in training_patient_dataframe.iterrows():
+                testing_time = testing_patient['ENCOUNTER_APPOINTMENT_DATETIME']
+                training_time = training_patient['ENCOUNTER_APPOINTMENT_DATETIME']
+                if testing_time > training_time > last_encounter_time:
+                    show_frequency = training_patient['SHOW_FREQUENCY']
+                    last_encounter_time = training_patient['ENCOUNTER_APPOINTMENT_DATETIME']
+            if show_frequency:
+                test_data.loc[test_index, 'SHOW_FREQUENCY'] = show_frequency
+
+    # storing the datset on files
+    train_data.to_csv('datasets/training.csv', index=False, sep='|')
+    test_data.to_csv('datasets/testing.csv', index=False, sep='|')
+
+    # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
+    train_data = train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1)
+    test_data = test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1)
 
     logging.getLogger('tab.regular').debug('Finished calculating show frequency')
 
     return np.array(train_data), np.array(test_data)
 
 
-def grid_search(x_train, y_train, x_test, y_test):
+def grid_search(dataset, y):
+
+    logging.getLogger('regular').info('creating training and testing dataset')
+    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.20, random_state=random_state)
 
     msg = 'adding the proportion or show_frequency column of how many times the patient has shown up to the ' \
           'appointment default = 1 i.e. it has a probability of showing up of 100\%'
@@ -132,13 +186,13 @@ def run_model(dataset, y):
     logging.getLogger('regular').info('creating training and testing dataset')
     x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42) 
 
-    msg = 'adding the proportion or show_frequency column of how many times the patient has shown up to the ' \
-          'appointment default = 1 i.e. it has a probability of showing up of 100\%'
-    logging.getLogger('regular.time').debug(msg)
-    x_train = x_train.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_train)[0])))
-    x_test = x_test.assign(SHOW_FREQUENCY=pd.Series(np.ones(np.shape(x_test)[0])))
+    # adding the proportion or show_frequency column of how many times the patient has shown up to the
+    # appointment default = 1 i.e. it has a probability of showing up of 100
+    # creating SHOW_FREQUENCY column
+    x_train = x_train.assign(SHOW_FREQUENCY=np.ones(np.shape(x_train)[0]))
+    x_test = x_test.assign(SHOW_FREQUENCY=np.ones(np.shape(x_test)[0]))
 
-    logging.getLogger('regular').info('calculate patient\'s show_frequency')
+    logging.getLogger('regular').info('calculating patient\'s show_frequency')
     x_train, x_test = calculate_show_frequency(train_data=x_train, test_data=x_test)
 
     logging.getLogger('regular').debug('creating and compiling model')
@@ -212,41 +266,43 @@ def main():
     
     # import data from file
     logging.getLogger('regular').info('reading data from file')
-    o_dataset = pd.read_csv(filepath_or_buffer=args.input_file, delimiter='|')
+    dataset = pd.read_csv(filepath_or_buffer=args.input_file, delimiter='|')
 
-    noshow_1 = o_dataset[o_dataset['NOSHOW'] == 1]
-    noshow_0 = o_dataset[o_dataset['NOSHOW'] == 0]
-    noshow_1.reset_index(drop=True, inplace=True)
-    noshow_0.reset_index(drop=True, inplace=True)
-    dataset = noshow_1.copy()
-    dataset = dataset.append(noshow_0[:noshow_1.shape[0]]).copy()
+    # encode class values as integers
+    encoder = LabelEncoder()
+    categorical_keys = ['ENCOUNTER_DEPARTMENT_ABBR', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'ENCOUNTER_APPOINTMENT_WEEK_DAY',
+                        'ENCOUNTER_APPOINTMENT_TYPE', 'PATIENT_GENDER']
+
+    dataset_floats = dataset.copy()
+
+    for key in categorical_keys:
+        dataset_floats[key] = encoder.fit_transform(dataset[key])
+
+    # remove every row that is missing a value
+    dataset_floats.dropna(axis=0, inplace=True)
 
     # labels 0 == SHOWUP, 1 == NOSHOW
-    y = np.array(dataset['NOSHOW'])
+    y = np.array(dataset_floats['NOSHOW'])
 
-    # dataset.drop(['ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'ENCOUNTER_CLASS',
-    #               'ENCOUNTER_CLASS', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'NENCOUNTERTYPE', 'ENCOUNTER_PATIENT_AGE'],
-    #              inplace=True, axis=1)
+    dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
 
-    # # encode class values as integers
-    encoder = LabelEncoder()
-    categorical_keys = ['ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'ENCOUNTER_CLASS',
-                        'ENCOUNTER_DEPARTMENT_SPECIALTY']
-    for key in categorical_keys:
-        dataset[key] = encoder.fit_transform(dataset[key])
+    number_ones = len(y[y == 1])
+    msg = 'data points NOSHOW true = {0}'.format(number_ones)
+    logging.getLogger('regular').debug(msg)
+    number_zeros = len(y[y == 0])
+    msg = 'data points NOSHOW False = {0}'.format(number_zeros)
+    logging.getLogger('regular').debug(msg)
 
     # check if cross validation flag is set
     if args.cross_validation:
         logging.getLogger('regular').info('running cross validation')
-        cross_validation(dataset=dataset, y=y)
+        cross_validation(dataset=dataset_floats, y=y)
     if args.grid_search:
         logging.getLogger('regular').info('running grid search')
-        logging.getLogger('regular').info('creating training and testing dataset')
-        x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.20, random_state=random_state)
-        grid_search(x_train=x_train, y_train=y_train, x_test=x_test, y_test=y_test)
+        grid_search(dataset=dataset_floats, y=y)
     else:
         logging.getLogger('regular').info('running basic NN model')
-        run_model(dataset=dataset, y=y)
+        run_model(dataset=dataset_floats, y=y)
 
 
 if __name__ == '__main__':
