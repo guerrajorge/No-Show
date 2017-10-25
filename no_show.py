@@ -178,22 +178,22 @@ def run_model(dataset, y):
 
     load(train_dataset=x_train, test_dataset=x_test)
 
-    logging.getLogger('regular').info('calculating patient\'s show_frequency')
+    logging.getLogger('regular.time').info('calculating patient\'s show_frequency')
     x_train, x_test = calculate_show_frequency()
 
-    logging.getLogger('regular').debug('creating and compiling model')
+    logging.getLogger('regular.time').debug('creating and compiling model')
     model = Sequential()
     model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
     model.add(Dense(8, activation='relu'))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    logging.getLogger('regular').info('training model')
+    logging.getLogger('regular.time').info('training model')
     logging.getLogger('regular').debug('training dataset size = {0}'.format(np.shape(x_train)))
     logging.getLogger('regular').debug('testing dataset size = {0}'.format(np.shape(x_test)))
     model.fit(x_train, y_train, epochs=150, batch_size=10, verbose=1)
 
-    logging.getLogger('regular').info('evaluating model')
+    logging.getLogger('regular.time').info('evaluating model')
     scores = model.evaluate(x_test, y_test, verbose=0)
     logging.getLogger('regular').info("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
 
