@@ -1,19 +1,18 @@
 import argparse
 import pandas as pd
 import os
-from sklearn.model_selection import train_test_split
-from keras.models import Sequential
-from keras.layers import Dense
 import numpy as np
 import logging
 from utils.logger import logger_initialization
 from sklearn.preprocessing import LabelEncoder
-from multiprocessing import Pool
+from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
-from keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn import metrics
-
+from multiprocessing import Pool, Value, Lock
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasClassifier
 
 # seed for numpy and sklearn
 random_state = 1
@@ -48,7 +47,6 @@ def create_model():
 
 
 def calculate_prob_encounter(patient_info):
-
     patient_id = patient_info[0]
     patient_index = patient_info[1]
 
@@ -84,7 +82,6 @@ def calculate_prob_encounter(patient_info):
 
 
 def calculate_prob_encounter_test(patient_id):
-
     training_patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_id]
     testing_patient_dataframe = test_data[test_data['PATIENT_KEY'] == patient_id]
 
@@ -132,7 +129,8 @@ def calculate_show_frequency():
     logging.getLogger('tab.regular').info('processing training data')
     pool = Pool(processes=20)
     processed_train_data = processed_train_data.append(pool.map(calculate_prob_encounter,
-                                                                list(unique_training_patient_ids.values)), ignore_index=True)
+                                                                list(unique_training_patient_ids.values)),
+                                                       ignore_index=True)
 
     # update the training dataset
     load(train_dataset=processed_train_data)
@@ -162,13 +160,14 @@ def calculate_show_frequency():
     train_data.to_csv('datasets/train_data_processed.csv', index=False)
     test_data.to_csv('datasets/test_data_processed.csv', index=False)
 
+    exit(0)
+
     return np.array(train_data), np.array(test_data)
 
 
 def run_model(dataset, y):
-
     logging.getLogger('regular').info('creating training and testing dataset')
-    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42) 
+    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42)
 
     # adding the proportion or show_frequency column of how many times the patient has shown up to the
     # appointment default = 1 i.e. it has a probability of showing up of 100
@@ -199,7 +198,6 @@ def run_model(dataset, y):
 
 
 def main():
-
     # ignore warning of compiling tensorflow from source
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -215,7 +213,7 @@ def main():
     logger_initialization(log_level=args.logLevel)
 
     logging.getLogger('line.regular.time.line').info('Running No_Show script')
-    
+
     # import data from file
     logging.getLogger('regular').info('reading data from file')
     dataset = pd.read_csv(filepath_or_buffer=args.input_file, delimiter='|')
