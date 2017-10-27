@@ -157,28 +157,31 @@ def calculate_show_frequency():
 
     logging.getLogger('tab.regular').debug('Finished calculating show frequency')
 
-    train_data.to_csv('datasets/train_data_processed.csv', index=False)
-    test_data.to_csv('datasets/test_data_processed.csv', index=False)
-
-    exit(0)
-
     return np.array(train_data), np.array(test_data)
 
 
-def run_model(dataset, y):
-    logging.getLogger('regular').info('creating training and testing dataset')
-    x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42)
+def run_model(dataset='', y='', pre_process=True, training_data='', testing_data='', training_y='', testing_y=''):
 
-    # adding the proportion or show_frequency column of how many times the patient has shown up to the
-    # appointment default = 1 i.e. it has a probability of showing up of 100
-    # creating SHOW_FREQUENCY column
-    x_train = x_train.assign(SHOW_FREQUENCY=np.ones(np.shape(x_train)[0]))
-    x_test = x_test.assign(SHOW_FREQUENCY=np.ones(np.shape(x_test)[0]))
+    if not pre_process:
+        logging.getLogger('regular').info('creating training and testing dataset')
+        x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42)
 
-    load(train_dataset=x_train, test_dataset=x_test)
+        # adding the proportion or show_frequency column of how many times the patient has shown up to the
+        # appointment default = 1 i.e. it has a probability of showing up of 100
+        # creating SHOW_FREQUENCY column
+        x_train = x_train.assign(SHOW_FREQUENCY=np.ones(np.shape(x_train)[0]))
+        x_test = x_test.assign(SHOW_FREQUENCY=np.ones(np.shape(x_test)[0]))
 
-    logging.getLogger('regular.time').info('calculating patient\'s show_frequency')
-    x_train, x_test = calculate_show_frequency()
+        load(train_dataset=x_train, test_dataset=x_test)
+
+        logging.getLogger('regular.time').info('calculating patient\'s show_frequency')
+        x_train, x_test = calculate_show_frequency()
+
+    else:
+        x_train = training_data
+        x_test = testing_data
+        y_train = training_y
+        y_test = testing_y
 
     logging.getLogger('regular.time').debug('creating and compiling model')
     model = Sequential()
@@ -203,11 +206,15 @@ def main():
 
     # get the the path for the input file argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input_file', help='dataset file', required=True)
+    parser.add_argument('-i', '--input_file', help='dataset file that has not being processed')
+    parser.add_argument('-tr', '--train_file', help='processed training dataset file')
+    parser.add_argument('-te', '--test_file', help='processed testing dataset file')
     parser.add_argument("-l", "--log", dest="logLevel", choices=['DEBUG', 'INFO', 'ERROR'], type=str.upper,
                         help="Set the logging level")
     parser.add_argument('-cv', '--cross_validation', action='store_true')
     parser.add_argument('-gs', '--grid_search', action='store_true')
+    parser.add_argument('-p', '--processed_dataset', action='store_true', help='this flag is used when the training '
+                                                                               'and testing datasets are provided')
     args = parser.parse_args()
 
     logger_initialization(log_level=args.logLevel)
@@ -216,36 +223,57 @@ def main():
 
     # import data from file
     logging.getLogger('regular').info('reading data from file')
-    dataset = pd.read_csv(filepath_or_buffer=args.input_file, delimiter='|')
 
-    # encode class values as integers
-    encoder = LabelEncoder()
-    categorical_keys = ['ENCOUNTER_DEPARTMENT_ABBR', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'ENCOUNTER_APPOINTMENT_WEEK_DAY',
-                        'ENCOUNTER_APPOINTMENT_TYPE', 'PATIENT_GENDER']
+    # initializing the variables
+    dataset_floats = ''
+    y = ''
+    x_train_data = ''
+    x_test_data = ''
+    y_train_data = ''
+    y_test_data = ''
 
-    dataset_floats = dataset.copy()
+    if not args.processed_dataset:
+        dataset = pd.read_csv(filepath_or_buffer=args.input_file, delimiter='|')
 
-    for key in categorical_keys:
-        dataset_floats[key] = encoder.fit_transform(dataset[key])
+        # encode class values as integers
+        encoder = LabelEncoder()
+        categorical_keys = ['ENCOUNTER_DEPARTMENT_ABBR', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'ENCOUNTER_APPOINTMENT_WEEK_DAY',
+                            'ENCOUNTER_APPOINTMENT_TYPE', 'PATIENT_GENDER']
 
-    # remove every row that is missing a value
-    dataset_floats.dropna(axis=0, inplace=True)
+        dataset_floats = dataset.copy()
 
-    # labels 0 == SHOWUP, 1 == NOSHOW
-    y = np.array(dataset_floats['NOSHOW'])
+        for key in categorical_keys:
+            dataset_floats[key] = encoder.fit_transform(dataset[key])
 
-    dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
+        # remove every row that is missing a value
+        dataset_floats.dropna(axis=0, inplace=True)
 
-    number_ones = len(y[y == 1])
-    msg = 'data points NOSHOW true = {0}'.format(number_ones)
-    logging.getLogger('regular').debug(msg)
-    number_zeros = len(y[y == 0])
-    msg = 'data points NOSHOW False = {0}'.format(number_zeros)
-    logging.getLogger('regular').debug(msg)
+        # labels 0 == SHOWUP, 1 == NOSHOW
+        y = np.array(dataset_floats['NOSHOW'])
+
+        dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(
+            dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
+
+        number_ones = len(y[y == 1])
+        msg = 'data points NOSHOW true = {0}'.format(number_ones)
+        logging.getLogger('regular').debug(msg)
+        number_zeros = len(y[y == 0])
+        msg = 'data points NOSHOW False = {0}'.format(number_zeros)
+        logging.getLogger('regular').debug(msg)
+
+    else:
+        tr_data = pd.read_csv(filepath_or_buffer=args.train_file)
+        te_data = pd.read_csv(filepath_or_buffer=args.test_file)
+
+        y_train_data = tr_data['NOSHOW'].values
+        y_test_data = te_data['NOSHOW'].values
+        x_train_data = tr_data.drop('NOSHOW', axis=1).values
+        x_test_data = te_data.drop('NOSHOW', axis=1).values
 
     # check if cross validation flag is set
     logging.getLogger('regular').info('running basic NN model')
-    run_model(dataset=dataset_floats, y=y)
+    run_model(dataset=dataset_floats, y=y, training_data=x_train_data, testing_data=x_test_data,
+              training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset)
 
 
 if __name__ == '__main__':
