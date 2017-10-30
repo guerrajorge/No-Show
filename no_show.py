@@ -135,9 +135,6 @@ def calculate_show_frequency(store_results=False):
     # update the training dataset
     load(train_dataset=processed_train_data)
 
-    # test_data = test_data.append(train_data[train_data['PATIENT_KEY'] == 10711093], ignore_index=True)
-    # load(test_dataset=test_data)
-
     unique_testing_patient_ids = test_data['PATIENT_KEY'].unique()
     msg = 'there are {0} unique patient IDs in the training dataset.'.format(len(unique_testing_patient_ids))
     logging.getLogger('line.tab.regular').debug(msg)
@@ -148,7 +145,7 @@ def calculate_show_frequency(store_results=False):
 
     processed_test_data = pd.DataFrame()
 
-    logging.getLogger('tab.regular').info('processing testing data')
+    logging.getLogger('tab.regular.time').info('processing testing data')
     if len(unique_testing_in_training) != 0:
         pool = Pool(processes=20)
         processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
@@ -185,7 +182,7 @@ def calculate_show_frequency(store_results=False):
         load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
              test_dataset=processed_test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
 
-    logging.getLogger('tab.regular').debug('Finished calculating show frequency')
+    logging.getLogger('tab.regular.time').debug('Finished calculating show frequency')
 
     return np.array(train_data), np.array(test_data)
 
