@@ -135,6 +135,9 @@ def calculate_show_frequency(store_results=False):
     # update the training dataset
     load(train_dataset=processed_train_data)
 
+    # test_data = test_data.append(train_data[train_data['PATIENT_KEY'] == 10711093], ignore_index=True)
+    # load(test_dataset=test_data)
+
     unique_testing_patient_ids = test_data['PATIENT_KEY'].unique()
     msg = 'there are {0} unique patient IDs in the training dataset.'.format(len(unique_testing_patient_ids))
     logging.getLogger('line.tab.regular').debug(msg)
@@ -146,15 +149,24 @@ def calculate_show_frequency(store_results=False):
     processed_test_data = pd.DataFrame()
 
     logging.getLogger('tab.regular').info('processing testing data')
-    pool = Pool(processes=30)
-    processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
-                                                              unique_testing_in_training),
-                                                     ignore_index=True)
+    if len(unique_testing_in_training) != 0:
+        pool = Pool(processes=20)
+        processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
+                                                                  unique_testing_in_training),
+                                                         ignore_index=True)
+
+        for _, processed_point in processed_test_data.iterrows():
+            s_index = test_data[(test_data['PATIENT_KEY'] == processed_point['PATIENT_KEY']) & \
+                                (test_data['ENCOUNTER_APPOINTMENT_DATETIME'] ==
+                                 processed_point['ENCOUNTER_APPOINTMENT_DATETIME'])].index.values[0]
+            test_data.loc[s_index, 'SHOW_FREQUENCY'] = processed_point['SHOW_FREQUENCY']
+
+        load(test_dataset=test_data)
 
     if store_results:
         # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
         load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1),
-             test_dataset=processed_test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1))
+             test_dataset=test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1))
 
         logging.getLogger('regular').debug('processed dataset information')
         logging.getLogger('regular').debug('training dataset shape (before storing)= {0}'.format(train_data.shape))
@@ -162,9 +174,9 @@ def calculate_show_frequency(store_results=False):
         logging.getLogger('regular').debug('testing dataset shape (before storing) = {0}'.format(test_data.shape))
         logging.getLogger('regular').debug('testing dataset keys (before storing) = {0}'.format(test_data.keys()))
 
-        train_data.to_csv('datasets/train_data_processed', index=False)
-        test_data.to_csv('datasets/test_data_processed', index=False)
-        
+        train_data.to_csv('datasets/train_data_processed.csv', index=False)
+        test_data.to_csv('datasets/test_data_processed.csv', index=False)
+
         # remove the NOSHOW columns
         load(train_dataset=train_data.drop(['NOSHOW'], axis=1), test_dataset=test_data.drop(['NOSHOW'], axis=1))
 
@@ -178,7 +190,8 @@ def calculate_show_frequency(store_results=False):
     return np.array(train_data), np.array(test_data)
 
 
-def run_model(dataset='', y='', pre_process=True, training_data='', testing_data='', training_y='', testing_y=''):
+def run_model(dataset='', y='', pre_process=True, training_data='', testing_data='', training_y='', testing_y='',
+              store_db=False):
 
     if not pre_process:
         logging.getLogger('regular').info('creating training and testing dataset')
@@ -198,10 +211,10 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         load(train_dataset=x_train, test_dataset=x_test)
 
         logging.getLogger('regular.time').info('calculating patient\'s show_frequency')
-        x_train, x_test = calculate_show_frequency()
+        x_train, x_test = calculate_show_frequency(store_results=store_db)
 
         logging.getLogger('regular').debug('training dataset processed shape = {0}'.format(x_train.shape))
-        logging.getLogger('regular').debug('testing dataset processed keys = {0}'.format(x_test.keys()))
+        logging.getLogger('regular').debug('testing dataset processed shape = {0}'.format(x_test.shape))
 
     else:
         x_train = training_data
@@ -310,7 +323,8 @@ def main():
     # check if cross validation flag is set
     logging.getLogger('regular').info('running basic NN model')
     run_model(dataset=dataset_floats, y=y, training_data=x_train_data, testing_data=x_test_data,
-              training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset)
+              training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset,
+              store_db=args.store_datasets)
 
 
 if __name__ == '__main__':
