@@ -106,7 +106,7 @@ def calculate_prob_encounter_test(patient_id):
     return test_df
 
 
-def calculate_show_frequency():
+def calculate_show_frequency(store_results=False):
     """
     This function will loop through all the unique PATIENT_IDs in the training dataset and calculate the SHOW frequency
     at each new encounter. Then it will go through the testing dataset and it will set the latest SHOW_FREQUENCY of the
@@ -127,7 +127,7 @@ def calculate_show_frequency():
     unique_training_patient_ids['index'] = unique_training_patient_ids.index
 
     logging.getLogger('tab.regular').info('processing training data')
-    pool = Pool(processes=20)
+    pool = Pool(processes=30)
     processed_train_data = processed_train_data.append(pool.map(calculate_prob_encounter,
                                                                 list(unique_training_patient_ids.values)),
                                                        ignore_index=True)
@@ -146,14 +146,29 @@ def calculate_show_frequency():
     processed_test_data = pd.DataFrame()
 
     logging.getLogger('tab.regular').info('processing testing data')
-    pool = Pool(processes=20)
+    pool = Pool(processes=30)
     processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
                                                               unique_testing_in_training),
                                                      ignore_index=True)
 
-    # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
-    load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
-         test_dataset=processed_test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
+    if store_results:
+        # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
+        load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1),
+             test_dataset=processed_test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1))
+
+        logging.getLogger('regular').debug('processed dataset information')
+        logging.getLogger('regular').debug('training dataset shape (before storing)= {0}'.format(train_data.shape))
+        logging.getLogger('regular').debug('training dataset keys (before storing) = {0}'.format(train_data.keys()))
+        logging.getLogger('regular').debug('testing dataset shape (before storing) = {0}'.format(test_data.shape))
+        logging.getLogger('regular').debug('testing dataset keys (before storing) = {0}'.format(test_data.keys()))
+
+        # remove the NOSHOW columns
+        load(train_dataset=train_data.drop(['NOSHOW'], axis=1), test_dataset=test_data.drop(['NOSHOW'], axis=1))
+
+    else:
+        # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
+        load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
+             test_dataset=processed_test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
 
     logging.getLogger('tab.regular').debug('Finished calculating show frequency')
 
@@ -172,10 +187,18 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         x_train = x_train.assign(SHOW_FREQUENCY=np.ones(np.shape(x_train)[0]))
         x_test = x_test.assign(SHOW_FREQUENCY=np.ones(np.shape(x_test)[0]))
 
+        logging.getLogger('regular').debug('training dataset shape = {0}'.format(x_train.shape))
+        logging.getLogger('regular').debug('training dataset keys = {0}'.format(x_train.keys()))
+        logging.getLogger('regular').debug('testing dataset shape = {0}'.format(x_test.shape))
+        logging.getLogger('regular').debug('testing dataset keys = {0}'.format(x_test.keys()))
+
         load(train_dataset=x_train, test_dataset=x_test)
 
         logging.getLogger('regular.time').info('calculating patient\'s show_frequency')
         x_train, x_test = calculate_show_frequency()
+
+        logging.getLogger('regular').debug('training dataset processed shape = {0}'.format(x_train.shape))
+        logging.getLogger('regular').debug('testing dataset processed keys = {0}'.format(x_test.keys()))
 
     else:
         x_train = training_data
@@ -215,6 +238,8 @@ def main():
     parser.add_argument('-gs', '--grid_search', action='store_true')
     parser.add_argument('-p', '--processed_dataset', action='store_true', help='this flag is used when the training '
                                                                                'and testing datasets are provided')
+    parser.add_argument('-s', '--store_datasets', action='store_true', help='this flag is used to store the training'
+                                                                            'and testing dataset on local system')
     args = parser.parse_args()
 
     logger_initialization(log_level=args.logLevel)
@@ -237,8 +262,8 @@ def main():
 
         # encode class values as integers
         encoder = LabelEncoder()
-        categorical_keys = ['ENCOUNTER_DEPARTMENT_ABBR', 'ENCOUNTER_DEPARTMENT_SPECIALTY', 'ENCOUNTER_APPOINTMENT_WEEK_DAY',
-                            'ENCOUNTER_APPOINTMENT_TYPE', 'PATIENT_GENDER']
+        categorical_keys = ['ENCOUNTER_DEPARTMENT_ABBR', 'ENCOUNTER_DEPARTMENT_SPECIALTY',
+                            'ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'PATIENT_GENDER']
 
         dataset_floats = dataset.copy()
 
@@ -254,8 +279,8 @@ def main():
         dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(
             dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
 
-        logging.getLogger('regular').debug('training dataset shape = {0}'.format(dataset_floats.shape))
-        logging.getLogger('regular').debug('training dataset keys = {0}'.format(dataset_floats.keys()))
+        logging.getLogger('regular').debug('dataset shape = {0}'.format(dataset_floats.shape))
+        logging.getLogger('regular').debug('dataset keys = {0}'.format(dataset_floats.keys()))
 
         number_ones = len(y[y == 1])
         msg = 'data points NOSHOW true = {0}'.format(number_ones)
@@ -271,7 +296,7 @@ def main():
 
         logging.getLogger('regular').debug('training dataset shape = {0}'.format(tr_data.shape))
         logging.getLogger('regular').debug('training dataset keys = {0}'.format(tr_data.keys()))
-        logging.getLogger('regular').debug('testing dataset keys = {0}'.format(te_data.shape))
+        logging.getLogger('regular').debug('testing dataset shape = {0}'.format(te_data.shape))
         logging.getLogger('regular').debug('testing dataset keys = {0}'.format(te_data.keys()))
 
         y_train_data = tr_data['NOSHOW'].values
