@@ -191,9 +191,9 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
     logging.getLogger('regular.time').info('training model')
-    logging.getLogger('regular').debug('training dataset size = {0}'.format(np.shape(x_train)))
-    logging.getLogger('regular').debug('testing dataset size = {0}'.format(np.shape(x_test)))
-    model.fit(x_train, y_train, epochs=150, batch_size=10, verbose=1)
+    logging.getLogger('regular').debug('training dataset size processed = {0}'.format(np.shape(x_train)))
+    logging.getLogger('regular').debug('testing dataset size processed = {0}'.format(np.shape(x_test)))
+    model.fit(x_train, y_train, epochs=150, batch_size=5, verbose=1)
 
     logging.getLogger('regular.time').info('evaluating model')
     scores = model.evaluate(x_test, y_test, verbose=0)
@@ -254,6 +254,9 @@ def main():
         dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(
             dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
 
+        logging.getLogger('regular').debug('training dataset shape = {0}'.format(dataset_floats.shape))
+        logging.getLogger('regular').debug('training dataset keys = {0}'.format(dataset_floats.keys()))
+
         number_ones = len(y[y == 1])
         msg = 'data points NOSHOW true = {0}'.format(number_ones)
         logging.getLogger('regular').debug(msg)
@@ -262,8 +265,14 @@ def main():
         logging.getLogger('regular').debug(msg)
 
     else:
+
         tr_data = pd.read_csv(filepath_or_buffer=args.train_file)
         te_data = pd.read_csv(filepath_or_buffer=args.test_file)
+
+        logging.getLogger('regular').debug('training dataset shape = {0}'.format(tr_data.shape))
+        logging.getLogger('regular').debug('training dataset keys = {0}'.format(tr_data.keys()))
+        logging.getLogger('regular').debug('testing dataset keys = {0}'.format(te_data.shape))
+        logging.getLogger('regular').debug('testing dataset keys = {0}'.format(te_data.keys()))
 
         y_train_data = tr_data['NOSHOW'].values
         y_test_data = te_data['NOSHOW'].values
