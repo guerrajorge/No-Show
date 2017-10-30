@@ -162,6 +162,9 @@ def calculate_show_frequency(store_results=False):
         logging.getLogger('regular').debug('testing dataset shape (before storing) = {0}'.format(test_data.shape))
         logging.getLogger('regular').debug('testing dataset keys (before storing) = {0}'.format(test_data.keys()))
 
+        train_data.to_csv('datasets/train_data_processed', index=False)
+        test_data.to_csv('datasets/test_data_processed', index=False)
+        
         # remove the NOSHOW columns
         load(train_dataset=train_data.drop(['NOSHOW'], axis=1), test_dataset=test_data.drop(['NOSHOW'], axis=1))
 
