@@ -2,7 +2,7 @@
 data/
 logfile*
 utils/__pycache__/
-datasets/
+dataset/
 grid*
 cross_validation*
 regular*

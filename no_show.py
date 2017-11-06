@@ -82,6 +82,10 @@ def calculate_prob_encounter(patient_info):
 
 
 def calculate_prob_encounter_test(patient_id):
+
+    import IPython
+    IPython.embed()
+
     training_patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_id]
     testing_patient_dataframe = test_data[test_data['PATIENT_KEY'] == patient_id]
 
@@ -141,16 +145,20 @@ def calculate_show_frequency(store_results=False):
     logging.getLogger('tab.regular').debug('The first 5 patients, in the testing dataset, are: {0}'.format(
         unique_testing_patient_ids[:5]))
 
-    unique_testing_in_training = train_data[train_data['PATIENT_KEY'].isin(unique_testing_patient_ids)]['PATIENT_KEY']
+    unique_testing_in_training = pd.unique(train_data[train_data['PATIENT_KEY'].isin(
+        unique_testing_patient_ids)]['PATIENT_KEY'])
 
     processed_test_data = pd.DataFrame()
 
     logging.getLogger('tab.regular.time').info('processing testing data')
     if len(unique_testing_in_training) != 0:
-        pool = Pool(processes=20)
-        processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
-                                                                  unique_testing_in_training),
-                                                         ignore_index=True)
+        # pool = Pool(processes=20)
+        # processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
+        #                                                           unique_testing_in_training),
+        #                                                  ignore_index=True)
+
+        for uid in unique_testing_in_training:
+            processed_test_data = processed_test_data.append(calculate_prob_encounter_test(uid))
 
         for _, processed_point in processed_test_data.iterrows():
             s_index = test_data[(test_data['PATIENT_KEY'] == processed_point['PATIENT_KEY']) & \
@@ -161,9 +169,6 @@ def calculate_show_frequency(store_results=False):
         load(test_dataset=test_data)
 
     if store_results:
-        # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
-        load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1),
-             test_dataset=test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME'], axis=1))
 
         logging.getLogger('regular').debug('processed dataset information')
         logging.getLogger('regular').debug('training dataset shape (before storing)= {0}'.format(train_data.shape))
@@ -171,11 +176,13 @@ def calculate_show_frequency(store_results=False):
         logging.getLogger('regular').debug('testing dataset shape (before storing) = {0}'.format(test_data.shape))
         logging.getLogger('regular').debug('testing dataset keys (before storing) = {0}'.format(test_data.keys()))
 
-        train_data.to_csv('datasets/train_data_processed.csv', index=False)
-        test_data.to_csv('datasets/test_data_processed.csv', index=False)
+        train_data.to_csv('datasets/train_data_processed.csv', index=False, sep='|')
+        test_data.to_csv('datasets/test_data_processed.csv', index=False, sep='|')
 
         # remove the NOSHOW columns
-        load(train_dataset=train_data.drop(['NOSHOW'], axis=1), test_dataset=test_data.drop(['NOSHOW'], axis=1))
+        # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
+        load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
+             test_dataset=test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
 
     else:
         # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
