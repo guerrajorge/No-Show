@@ -10,9 +10,9 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import GridSearchCV
 from sklearn import metrics
 from multiprocessing import Pool, Value, Lock
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.wrappers.scikit_learn import KerasClassifier
+# from keras.models import Sequential
+# from keras.layers import Dense
+# from keras.wrappers.scikit_learn import KerasClassifier
 
 # seed for numpy and sklearn
 random_state = 1
@@ -83,9 +83,6 @@ def calculate_prob_encounter(patient_info):
 
 def calculate_prob_encounter_test(patient_id):
 
-    import IPython
-    IPython.embed()
-
     training_patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_id]
     testing_patient_dataframe = test_data[test_data['PATIENT_KEY'] == patient_id]
 
@@ -103,7 +100,7 @@ def calculate_prob_encounter_test(patient_id):
             if testing_time > training_time > last_encounter_time:
                 show_frequency = training_patient['SHOW_FREQUENCY']
                 last_encounter_time = training_patient['ENCOUNTER_APPOINTMENT_DATETIME']
-        if show_frequency:
+        if show_frequency != '':
             # update the SHOW_FREQUENCY to the one obtained from the training dataset
             test_df.loc[test_index, 'SHOW_FREQUENCY'] = show_frequency
 
