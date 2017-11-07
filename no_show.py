@@ -10,9 +10,9 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import GridSearchCV
 from sklearn import metrics
 from multiprocessing import Pool, Value, Lock
-# from keras.models import Sequential
-# from keras.layers import Dense
-# from keras.wrappers.scikit_learn import KerasClassifier
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasClassifier
 
 # seed for numpy and sklearn
 random_state = 1
@@ -149,13 +149,14 @@ def calculate_show_frequency(store_results=False):
 
     logging.getLogger('tab.regular.time').info('processing testing data')
     if len(unique_testing_in_training) != 0:
-        # pool = Pool(processes=20)
-        # processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
-        #                                                           unique_testing_in_training),
-        #                                                  ignore_index=True)
-
-        for uid in unique_testing_in_training:
-            processed_test_data = processed_test_data.append(calculate_prob_encounter_test(uid))
+        # multi-processed
+        pool = Pool(processes=20)
+        processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
+                                                                  unique_testing_in_training),
+                                                         ignore_index=True)
+        # sequential
+        # for uid in unique_testing_in_training:
+        #     processed_test_data = processed_test_data.append(calculate_prob_encounter_test(uid))
 
         for _, processed_point in processed_test_data.iterrows():
             s_index = test_data[(test_data['PATIENT_KEY'] == processed_point['PATIENT_KEY']) & \
