@@ -223,8 +223,21 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         y_test = testing_y
 
     if svm_flag:
-        clf = svm.SVC()
+        param_grid = [
+            {'C': [1, 10, 100, 1000], 'kernel': ['linear']},
+            {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']},
+        ]
+        clf = GridSearchCV(estimator=svm.SVC(), param_grid=param_grid, n_jobs=-1)
         clf.fit(x_train, y_train)
+
+        # View the accuracy score
+        logging.getLogger('regular').debug('Best score for data1: {0}'.format(clf.best_score_))
+
+        # View the best parameters for the model found using grid search
+        logging.getLogger('regular').debug('Best C: {0}'.format(clf.best_estimator_.C))
+        logging.getLogger('regular').debug('Best Kernel: {0}'.format(clf.best_estimator_.kernel))
+        logging.getLogger('regular').debug('Best Gamma: {0}'.format(clf.best_estimator_.gamma))
+
         svm_score = clf.score(x_test, y_test)
         logging.getLogger('regular').info("score: {0}".format(svm_score))
 
