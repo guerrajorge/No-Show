@@ -223,6 +223,8 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         y_test = testing_y
 
     if svm_flag:
+        
+        logging.getLogger('regular').info('running GRIDSEARCH SVM model')
         param_grid = [
             {'C': [1, 10, 100, 1000], 'kernel': ['linear']},
             {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']},
@@ -242,6 +244,8 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         logging.getLogger('regular').info("score: {0}".format(svm_score))
 
     else:
+
+        logging.getLogger('regular').info('running basic NN model')
         logging.getLogger('regular.time').debug('creating and compiling model')
         model = Sequential()
         model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
@@ -342,7 +346,6 @@ def main():
         x_test_data = tr_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1).values
 
     # check if cross validation flag is set
-    logging.getLogger('regular').info('running basic NN model')
     run_model(dataset=dataset_floats, y=y, training_data=x_train_data, testing_data=x_test_data,
               training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset,
               store_db=args.store_datasets, svm_flag=args.svm)
