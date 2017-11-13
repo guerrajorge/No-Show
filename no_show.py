@@ -13,6 +13,7 @@ from multiprocessing import Pool, Value, Lock
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn import svm
 
 # seed for numpy and sklearn
 random_state = 1
@@ -159,9 +160,11 @@ def calculate_show_frequency(store_results=False):
         #     processed_test_data = processed_test_data.append(calculate_prob_encounter_test(uid))
 
         for _, processed_point in processed_test_data.iterrows():
+            # get the row index of the current specific processed test data
             s_index = test_data[(test_data['PATIENT_KEY'] == processed_point['PATIENT_KEY']) & \
                                 (test_data['ENCOUNTER_APPOINTMENT_DATETIME'] ==
                                  processed_point['ENCOUNTER_APPOINTMENT_DATETIME'])].index.values[0]
+            # modify its SHOW_FREQUENCY value
             test_data.loc[s_index, 'SHOW_FREQUENCY'] = processed_point['SHOW_FREQUENCY']
 
         load(test_dataset=test_data)
@@ -177,15 +180,10 @@ def calculate_show_frequency(store_results=False):
         train_data.to_csv('datasets/train_data_processed.csv', index=False, sep='|')
         test_data.to_csv('datasets/test_data_processed.csv', index=False, sep='|')
 
-        # remove the NOSHOW columns
-        # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
-        load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
-             test_dataset=test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
-
-    else:
-        # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
-        load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
-             test_dataset=processed_test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
+    # remove the NOSHOW columns
+    # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
+    load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
+         test_dataset=test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
 
     logging.getLogger('tab.regular.time').debug('Finished calculating show frequency')
 
@@ -193,7 +191,7 @@ def calculate_show_frequency(store_results=False):
 
 
 def run_model(dataset='', y='', pre_process=True, training_data='', testing_data='', training_y='', testing_y='',
-              store_db=False):
+              store_db=False, svm_flag=False):
 
     if not pre_process:
         logging.getLogger('regular').info('creating training and testing dataset')
@@ -224,21 +222,28 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         y_train = training_y
         y_test = testing_y
 
-    logging.getLogger('regular.time').debug('creating and compiling model')
-    model = Sequential()
-    model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
-    model.add(Dense(8, activation='relu'))
-    model.add(Dense(1, activation='sigmoid'))
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    if svm_flag:
+        clf = svm.SVC()
+        clf.fit(x_train, y_train)
+        svm_score = clf.score(x_test, y_test)
+        logging.getLogger('regular').info("score: {0}".format(svm_score))
 
-    logging.getLogger('regular.time').info('training model')
-    logging.getLogger('regular').debug('training dataset size processed = {0}'.format(np.shape(x_train)))
-    logging.getLogger('regular').debug('testing dataset size processed = {0}'.format(np.shape(x_test)))
-    model.fit(x_train, y_train, epochs=150, batch_size=5, verbose=1)
+    else:
+        logging.getLogger('regular.time').debug('creating and compiling model')
+        model = Sequential()
+        model.add(Dense(12, input_dim=np.shape(x_train)[1], activation='relu'))
+        model.add(Dense(8, activation='relu'))
+        model.add(Dense(1, activation='sigmoid'))
+        model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    logging.getLogger('regular.time').info('evaluating model')
-    scores = model.evaluate(x_test, y_test, verbose=0)
-    logging.getLogger('regular').info("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
+        logging.getLogger('regular.time').info('training model')
+        logging.getLogger('regular').debug('training dataset size processed = {0}'.format(np.shape(x_train)))
+        logging.getLogger('regular').debug('testing dataset size processed = {0}'.format(np.shape(x_test)))
+        model.fit(x_train, y_train, epochs=150, batch_size=5, verbose=1)
+
+        logging.getLogger('regular.time').info('evaluating model')
+        scores = model.evaluate(x_test, y_test, verbose=0)
+        logging.getLogger('regular').info("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
 
 
 def main():
@@ -254,6 +259,7 @@ def main():
                         help="Set the logging level")
     parser.add_argument('-cv', '--cross_validation', action='store_true')
     parser.add_argument('-gs', '--grid_search', action='store_true')
+    parser.add_argument('-svm', '--svm', help='run support vector machine', action='store_true')
     parser.add_argument('-p', '--processed_dataset', action='store_true', help='this flag is used when the training '
                                                                                'and testing datasets are provided')
     parser.add_argument('-s', '--store_datasets', action='store_true', help='this flag is used to store the training'
@@ -326,7 +332,7 @@ def main():
     logging.getLogger('regular').info('running basic NN model')
     run_model(dataset=dataset_floats, y=y, training_data=x_train_data, testing_data=x_test_data,
               training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset,
-              store_db=args.store_datasets)
+              store_db=args.store_datasets, svm_flag=args.svm)
 
 
 if __name__ == '__main__':
