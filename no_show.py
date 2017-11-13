@@ -309,8 +309,8 @@ def main():
 
     else:
 
-        tr_data = pd.read_csv(filepath_or_buffer=args.train_file)
-        te_data = pd.read_csv(filepath_or_buffer=args.test_file)
+        tr_data = pd.read_csv(filepath_or_buffer=args.train_file, delimiter='|')
+        te_data = pd.read_csv(filepath_or_buffer=args.test_file, delimiter='|')
 
         logging.getLogger('regular').debug('training dataset shape = {0}'.format(tr_data.shape))
         logging.getLogger('regular').debug('training dataset keys = {0}'.format(tr_data.keys()))
@@ -319,8 +319,8 @@ def main():
 
         y_train_data = tr_data['NOSHOW'].values
         y_test_data = te_data['NOSHOW'].values
-        x_train_data = tr_data.drop('NOSHOW', axis=1).values
-        x_test_data = te_data.drop('NOSHOW', axis=1).values
+        x_train_data = tr_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1).values
+        x_test_data = tr_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1).values
 
     # check if cross validation flag is set
     logging.getLogger('regular').info('running basic NN model')
