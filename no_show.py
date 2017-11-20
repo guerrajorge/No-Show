@@ -191,7 +191,7 @@ def calculate_show_frequency(store_results=False):
 
 
 def run_model(dataset='', y='', pre_process=True, training_data='', testing_data='', training_y='', testing_y='',
-              store_db=False, svm_flag=False):
+              store_db=False, svm_flag=False, gs_flag=False):
 
     if not pre_process:
         logging.getLogger('regular').info('creating training and testing dataset')
@@ -223,24 +223,33 @@ def run_model(dataset='', y='', pre_process=True, training_data='', testing_data
         y_test = testing_y
 
     if svm_flag:
+
+        if gs_flag:
         
-        logging.getLogger('regular').info('running GRIDSEARCH SVM model')
-        param_grid = [
-            {'C': [1, 10, 100, 1000], 'kernel': ['linear']},
-            {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']},
-        ]
-        clf = GridSearchCV(estimator=svm.SVC(), param_grid=param_grid, n_jobs=-1)
-        clf.fit(x_train, y_train)
+            logging.getLogger('regular.time').info('running GRIDSEARCH SVM model')
+            param_grid = [
+                {'C': [1, 10, 100, 1000], 'kernel': ['linear']},
+                {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']},
+            ]
+            model = GridSearchCV(estimator=svm.SVC(), param_grid=param_grid, n_jobs=-1)
+            model.fit(x_train, y_train)
+            logging.getLogger('regular.time').debug('finished training model')
 
-        # View the accuracy score
-        logging.getLogger('regular').debug('Best score for data1: {0}'.format(clf.best_score_))
+            # View the accuracy score
+            logging.getLogger('regular').debug('Best score for data1: {0}'.format(model.best_score_))
 
-        # View the best parameters for the model found using grid search
-        logging.getLogger('regular').debug('Best C: {0}'.format(clf.best_estimator_.C))
-        logging.getLogger('regular').debug('Best Kernel: {0}'.format(clf.best_estimator_.kernel))
-        logging.getLogger('regular').debug('Best Gamma: {0}'.format(clf.best_estimator_.gamma))
+            # View the best parameters for the model found using grid search
+            logging.getLogger('regular').debug('Best C: {0}'.format(model.best_estimator_.C))
+            logging.getLogger('regular').debug('Best Kernel: {0}'.format(model.best_estimator_.kernel))
+            logging.getLogger('regular').debug('Best Gamma: {0}'.format(model.best_estimator_.gamma))
 
-        svm_score = clf.score(x_test, y_test)
+        else:
+            logging.getLogger('regular.time').info('running SVM model')
+            model = svm.SVC()
+            model.fit(x_train, y_train)
+            logging.getLogger('regular.time').debug('finished training model')
+
+        svm_score = model.score(x_test, y_test)
         logging.getLogger('regular').info("score: {0}".format(svm_score))
 
     else:
@@ -348,7 +357,7 @@ def main():
     # check if cross validation flag is set
     run_model(dataset=dataset_floats, y=y, training_data=x_train_data, testing_data=x_test_data,
               training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset,
-              store_db=args.store_datasets, svm_flag=args.svm)
+              store_db=args.store_datasets, svm_flag=args.svm, gs_flag=args.grid_search)
 
 
 if __name__ == '__main__':
