@@ -20,16 +20,6 @@ random_state = 1
 np.random.seed(random_state)
 
 
-def load(train_dataset=pd.DataFrame(), test_dataset=pd.DataFrame):
-    global train_data
-    global test_data
-
-    if not train_dataset.empty:
-        train_data = train_dataset
-    if not test_dataset.empty:
-        test_data = test_dataset
-
-
 # Function to create model, required for KerasClassifier
 def create_model():
     """
@@ -47,180 +37,12 @@ def create_model():
     return model
 
 
-def calculate_prob_encounter(patient_info):
-    patient_id = patient_info[0]
-    patient_index = patient_info[1]
+def run_model(training_data='', testing_data='', training_y='', testing_y='', svm_flag=False, gs_flag=False):
 
-    patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_id]
-
-    unique_training_patient_ids = train_data['PATIENT_KEY'].unique()
-
-    msg = 'processing {0} out of {1} patients'.format(patient_index, len(unique_training_patient_ids) - 1)
-    logging.getLogger('tab.tab.regular').debug(msg)
-
-    df = patient_dataframe.copy(deep=True)
-    # number of encounters processed
-    encounters_processed = 0.0
-    # total number of encounter that the patient showed up
-    total_shows = 0.0
-    # total number of encounter that the patient did not show up
-    total_no_shows = 0.0
-    # loop through each encounter
-    for index, data_point in df.iterrows():
-        encounters_processed += 1.0
-        # if the patient did not show up
-        if data_point['NOSHOW']:
-            total_no_shows += 1.0
-            prob = 1 - (total_no_shows / encounters_processed)
-        else:
-            total_shows += 1.0
-            prob = total_shows / encounters_processed
-
-        # update the SHOW_FREQUENCY for the specific patient's based on the index processed
-        df.loc[index, 'SHOW_FREQUENCY'] = prob
-
-    return df
-
-
-def calculate_prob_encounter_test(patient_id):
-
-    training_patient_dataframe = train_data[train_data['PATIENT_KEY'] == patient_id]
-    testing_patient_dataframe = test_data[test_data['PATIENT_KEY'] == patient_id]
-
-    test_df = testing_patient_dataframe.copy(deep=True)
-
-    # For every point in the testing dataset that matches the training dataset, loop for the
-    # ENCOUNTER_APPOINTMENT_DATETIME of the training points that occurred before the ENCOUNTER_APPOINTMENT_DATETIME
-    # in the testing data point. Grab and use the latest one to update the testing dataset
-    for test_index, testing_patient in testing_patient_dataframe.iterrows():
-        last_encounter_time = pd.datetime(1, 1, 1, 7, 0, 0)
-        show_frequency = ''
-        for _, training_patient in training_patient_dataframe.iterrows():
-            testing_time = testing_patient['ENCOUNTER_APPOINTMENT_DATETIME']
-            training_time = training_patient['ENCOUNTER_APPOINTMENT_DATETIME']
-            if testing_time > training_time > last_encounter_time:
-                show_frequency = training_patient['SHOW_FREQUENCY']
-                last_encounter_time = training_patient['ENCOUNTER_APPOINTMENT_DATETIME']
-        if show_frequency != '':
-            # update the SHOW_FREQUENCY to the one obtained from the training dataset
-            test_df.loc[test_index, 'SHOW_FREQUENCY'] = show_frequency
-
-    return test_df
-
-
-def calculate_show_frequency(store_results=False):
-    """
-    This function will loop through all the unique PATIENT_IDs in the training dataset and calculate the SHOW frequency
-    at each new encounter. Then it will go through the testing dataset and it will set the latest SHOW_FREQUENCY of the
-    training data point based on the ENCOUNTER_APPOINTMENT_DATETIME
-    :return: a filled 'SHOW_FREQUENCY' column in the training and testing dataset.
-    """
-
-    logging.getLogger('tab.regular').debug('obtaining frequency of "SHOW" and "NOSHOW" based on the patient\'s id')
-
-    unique_training_patient_ids = pd.DataFrame(train_data['PATIENT_KEY'].unique())
-    msg = 'there are {0} unique patient IDs in the training dataset.'.format(len(unique_training_patient_ids))
-    logging.getLogger('tab.regular').debug(msg)
-    logging.getLogger('tab.regular').debug('The first 5 patients, in the training dataset, are: {0}'.format(
-        unique_training_patient_ids[:5].values))
-
-    processed_train_data = pd.DataFrame()
-    # index are used for debugging when running the script
-    unique_training_patient_ids['index'] = unique_training_patient_ids.index
-
-    logging.getLogger('tab.regular').info('processing training data')
-    pool = Pool(processes=30)
-    processed_train_data = processed_train_data.append(pool.map(calculate_prob_encounter,
-                                                                list(unique_training_patient_ids.values)),
-                                                       ignore_index=True)
-
-    # update the training dataset
-    load(train_dataset=processed_train_data)
-
-    unique_testing_patient_ids = test_data['PATIENT_KEY'].unique()
-    msg = 'there are {0} unique patient IDs in the training dataset.'.format(len(unique_testing_patient_ids))
-    logging.getLogger('line.tab.regular').debug(msg)
-    logging.getLogger('tab.regular').debug('The first 5 patients, in the testing dataset, are: {0}'.format(
-        unique_testing_patient_ids[:5]))
-
-    unique_testing_in_training = pd.unique(train_data[train_data['PATIENT_KEY'].isin(
-        unique_testing_patient_ids)]['PATIENT_KEY'])
-
-    processed_test_data = pd.DataFrame()
-
-    logging.getLogger('tab.regular.time').info('processing testing data')
-    if len(unique_testing_in_training) != 0:
-        # multi-processed
-        pool = Pool(processes=20)
-        processed_test_data = processed_test_data.append(pool.map(calculate_prob_encounter_test,
-                                                                  unique_testing_in_training),
-                                                         ignore_index=True)
-        # sequential
-        # for uid in unique_testing_in_training:
-        #     processed_test_data = processed_test_data.append(calculate_prob_encounter_test(uid))
-
-        for _, processed_point in processed_test_data.iterrows():
-            # get the row index of the current specific processed test data
-            s_index = test_data[(test_data['PATIENT_KEY'] == processed_point['PATIENT_KEY']) & \
-                                (test_data['ENCOUNTER_APPOINTMENT_DATETIME'] ==
-                                 processed_point['ENCOUNTER_APPOINTMENT_DATETIME'])].index.values[0]
-            # modify its SHOW_FREQUENCY value
-            test_data.loc[s_index, 'SHOW_FREQUENCY'] = processed_point['SHOW_FREQUENCY']
-
-        load(test_dataset=test_data)
-
-    if store_results:
-
-        logging.getLogger('regular').debug('processed dataset information')
-        logging.getLogger('regular').debug('training dataset shape (before storing)= {0}'.format(train_data.shape))
-        logging.getLogger('regular').debug('training dataset keys (before storing) = {0}'.format(train_data.keys()))
-        logging.getLogger('regular').debug('testing dataset shape (before storing) = {0}'.format(test_data.shape))
-        logging.getLogger('regular').debug('testing dataset keys (before storing) = {0}'.format(test_data.keys()))
-
-        train_data.to_csv('datasets/train_data_processed.csv', index=False, sep='|')
-        test_data.to_csv('datasets/test_data_processed.csv', index=False, sep='|')
-
-    # remove the NOSHOW columns
-    # remove the PATIENT_ID,  ENCOUNTER_APPOINTMENT_DATETIME and NOSHOW columns
-    load(train_dataset=train_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1),
-         test_dataset=test_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1))
-
-    logging.getLogger('tab.regular.time').debug('Finished calculating show frequency')
-
-    return np.array(train_data), np.array(test_data)
-
-
-def run_model(dataset='', y='', pre_process=True, training_data='', testing_data='', training_y='', testing_y='',
-              store_db=False, svm_flag=False, gs_flag=False):
-
-    if not pre_process:
-        logging.getLogger('regular').info('creating training and testing dataset')
-        x_train, x_test, y_train, y_test = train_test_split(dataset, y, test_size=0.33, random_state=42)
-
-        # adding the proportion or show_frequency column of how many times the patient has shown up to the
-        # appointment default = 1 i.e. it has a probability of showing up of 100
-        # creating SHOW_FREQUENCY column
-        x_train = x_train.assign(SHOW_FREQUENCY=np.ones(np.shape(x_train)[0]))
-        x_test = x_test.assign(SHOW_FREQUENCY=np.ones(np.shape(x_test)[0]))
-
-        logging.getLogger('regular').debug('training dataset shape = {0}'.format(x_train.shape))
-        logging.getLogger('regular').debug('training dataset keys = {0}'.format(x_train.keys()))
-        logging.getLogger('regular').debug('testing dataset shape = {0}'.format(x_test.shape))
-        logging.getLogger('regular').debug('testing dataset keys = {0}'.format(x_test.keys()))
-
-        load(train_dataset=x_train, test_dataset=x_test)
-
-        logging.getLogger('regular.time').info('calculating patient\'s show_frequency')
-        x_train, x_test = calculate_show_frequency(store_results=store_db)
-
-        logging.getLogger('regular').debug('training dataset processed shape = {0}'.format(x_train.shape))
-        logging.getLogger('regular').debug('testing dataset processed shape = {0}'.format(x_test.shape))
-
-    else:
-        x_train = training_data
-        x_test = testing_data
-        y_train = training_y
-        y_test = testing_y
+    x_train = training_data
+    x_test = testing_data
+    y_train = training_y
+    y_test = testing_y
 
     if svm_flag:
 
@@ -299,65 +121,24 @@ def main():
     # import data from file
     logging.getLogger('regular').info('reading data from file')
 
-    # initializing the variables
-    dataset_floats = ''
-    y = ''
-    x_train_data = ''
-    x_test_data = ''
-    y_train_data = ''
-    y_test_data = ''
+    tr_data = pd.read_csv(filepath_or_buffer=args.train_file, delimiter='|')
+    te_data = pd.read_csv(filepath_or_buffer=args.test_file, delimiter='|')
 
-    if not args.processed_dataset:
-        dataset = pd.read_csv(filepath_or_buffer=args.input_file, delimiter='|')
+    logging.getLogger('regular').debug('training dataset shape = {0}'.format(tr_data.shape))
+    logging.getLogger('regular').debug('training dataset keys = {0}'.format(tr_data.keys()))
+    logging.getLogger('regular').debug('testing dataset shape = {0}'.format(te_data.shape))
+    logging.getLogger('regular').debug('testing dataset keys = {0}'.format(te_data.keys()))
 
-        # encode class values as integers
-        encoder = LabelEncoder()
-        categorical_keys = ['ENCOUNTER_DEPARTMENT_ABBR', 'ENCOUNTER_DEPARTMENT_SPECIALTY',
-                            'ENCOUNTER_APPOINTMENT_WEEK_DAY', 'ENCOUNTER_APPOINTMENT_TYPE', 'PATIENT_GENDER']
-
-        dataset_floats = dataset.copy()
-
-        for key in categorical_keys:
-            dataset_floats[key] = encoder.fit_transform(dataset[key])
-
-        # remove every row that is missing a value
-        dataset_floats.dropna(axis=0, inplace=True)
-
-        # labels 0 == SHOWUP, 1 == NOSHOW
-        y = np.array(dataset_floats['NOSHOW'])
-
-        dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(
-            dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
-
-        logging.getLogger('regular').debug('dataset shape = {0}'.format(dataset_floats.shape))
-        logging.getLogger('regular').debug('dataset keys = {0}'.format(dataset_floats.keys()))
-
-        number_ones = len(y[y == 1])
-        msg = 'data points NOSHOW true = {0}'.format(number_ones)
-        logging.getLogger('regular').debug(msg)
-        number_zeros = len(y[y == 0])
-        msg = 'data points NOSHOW False = {0}'.format(number_zeros)
-        logging.getLogger('regular').debug(msg)
-
-    else:
-
-        tr_data = pd.read_csv(filepath_or_buffer=args.train_file, delimiter='|')
-        te_data = pd.read_csv(filepath_or_buffer=args.test_file, delimiter='|')
-
-        logging.getLogger('regular').debug('training dataset shape = {0}'.format(tr_data.shape))
-        logging.getLogger('regular').debug('training dataset keys = {0}'.format(tr_data.keys()))
-        logging.getLogger('regular').debug('testing dataset shape = {0}'.format(te_data.shape))
-        logging.getLogger('regular').debug('testing dataset keys = {0}'.format(te_data.keys()))
-
-        y_train_data = tr_data['NOSHOW'].values
-        y_test_data = te_data['NOSHOW'].values
-        x_train_data = tr_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1).values
-        x_test_data = tr_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'NOSHOW'], axis=1).values
+    y_train_data = tr_data['NOSHOW'].values
+    y_test_data = te_data['NOSHOW'].values
+    x_train_data = tr_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'ENCOUNTER_APPOINTMENT_STATUS',
+                                 'NOSHOW'], axis=1).values
+    x_test_data = te_data.drop(['PATIENT_KEY', 'ENCOUNTER_APPOINTMENT_DATETIME', 'ENCOUNTER_APPOINTMENT_STATUS',
+                                'NOSHOW'], axis=1).values
 
     # check if cross validation flag is set
-    run_model(dataset=dataset_floats, y=y, training_data=x_train_data, testing_data=x_test_data,
-              training_y=y_train_data, testing_y=y_test_data, pre_process=args.processed_dataset,
-              store_db=args.store_datasets, svm_flag=args.svm, gs_flag=args.grid_search)
+    run_model(training_data=x_train_data, testing_data=x_test_data, training_y=y_train_data, testing_y=y_test_data,
+              svm_flag=args.svm, gs_flag=args.grid_search)
 
 
 if __name__ == '__main__':
