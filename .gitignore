@@ -9,3 +9,4 @@ regular*
 .nfs*
 .ipynb_checkpoints/
 .DS_store
+results/*
