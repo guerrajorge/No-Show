@@ -113,9 +113,7 @@ def calculate_train_rep(patient_info):
     freq_column = patient_info[3]
 
     patient_dataframe = train_data[train_data[pivot_column] == id_value]
-
     df = patient_dataframe.copy(deep=True)
-
     df = df.sort_values('ENCOUNTER_APPOINTMENT_DATETIME', axis=0)
 
     total_count = 0
@@ -128,6 +126,56 @@ def calculate_train_rep(patient_info):
             total_count = 0
 
         df.loc[index, freq_column] = total_count
+
+    return df
+
+
+def update_test_dataset(unique_ids, enc_type, frq_column):
+
+    processed_test_data = pd.DataFrame()
+
+    testing_info = pd.DataFrame(data=unique_ids, columns=['data'])
+    testing_info['pivot_column'] = enc_type
+    testing_info['freq_column'] = frq_column
+
+    # multi-processed
+    pool = Pool(processes=10)
+    processed_test_data = processed_test_data.append(pool.map(
+        calculate_test_freq, list(testing_info.values)), ignore_index=True)
+
+    # # sequential
+    # # department ID = did
+    # for _, did in testing_info.iterrows():
+    #     processed_test_data = processed_test_data.append(calculate_test_freq(did))
+
+    # after the new testing information has been processed, we need to update the testing dataset
+    for _, processed_point in processed_test_data.iterrows():
+        # get the row index of the current specific processed test data
+        # get the index of the same department and those encounter that happen previously to the current
+        # testing encounter
+        s_index = test_data[(test_data[enc_type] ==
+                             processed_point[enc_type]) &
+                            (test_data['ENCOUNTER_APPOINTMENT_DATETIME'] ==
+                             processed_point['ENCOUNTER_APPOINTMENT_DATETIME'])].index.values[0]
+        # modify its DEPARTMENT_[NOSHOW|CANCEL]_FREQUENCY value
+        test_data.loc[s_index, frq_column] = processed_point[frq_column]
+
+    load(test_dataset=test_data)
+
+
+def calculate_train_new(patient_info):
+    # id_value = patient_info['data']
+    # pivot_column = patient_info['pivot_column']
+    # freq_column = patient_info['freq_column']
+    id_value = patient_info[0]
+    pivot_column = patient_info[1]
+    freq_column = patient_info[2]
+
+    patient_dataframe = train_data[train_data[pivot_column] == id_value]
+    df = patient_dataframe.copy(deep=True)
+    # make sure it is sorted by date since the first instance will be assigned a 1
+    df = df.sort_values('ENCOUNTER_APPOINTMENT_DATETIME', axis=0)
+    df.loc[df.index[0], freq_column] = 1
 
     return df
 
@@ -186,7 +234,7 @@ def calculate_frequencies():
 
                 if 'FRQ' in frq_column:
                     # multi-processed
-                    pool = Pool(processes=30)
+                    pool = Pool(processes=10)
                     processed_train_data = processed_train_data.append(pool.map(
                         calculate_train_freq, list(unique_training_department_info.values)), ignore_index=True)
 
@@ -197,7 +245,7 @@ def calculate_frequencies():
                 else:
 
                     # multi-processed
-                    pool = Pool(processes=30)
+                    pool = Pool(processes=10)
                     processed_train_data = processed_train_data.append(pool.map(
                         calculate_train_rep, list(unique_training_department_info.values)), ignore_index=True)
 
@@ -211,6 +259,8 @@ def calculate_frequencies():
                 # update the training dataset
                 load(train_dataset=processed_train_data)
 
+                processed_train_data = ''
+
                 unique_testing_department_ids = test_data[encounter_type].unique()
 
                 # obtaining the IDs that are in both the training and the testing dataset since those are the only ones
@@ -218,42 +268,77 @@ def calculate_frequencies():
                 unique_testing_in_training = pd.unique(train_data[train_data[encounter_type].isin(
                     unique_testing_department_ids)][encounter_type])
 
-                processed_test_data = pd.DataFrame()
-
                 msg = 'processing {0} testing data'.format(frq_column)
                 logging.getLogger('tab.regular.time').info(msg)
                 # only go through the whole processing if there are common IDs in the training and testing dataset
                 if len(unique_testing_in_training) != 0:
-                    testing_info = pd.DataFrame(data=unique_testing_in_training, columns=['data'])
-                    testing_info['pivot_column'] = encounter_type
-                    testing_info['freq_column'] = frq_column
-
-                    # multi-processed
-                    pool = Pool(processes=30)
-                    processed_test_data = processed_test_data.append(pool.map(
-                        calculate_test_freq, list(testing_info.values)), ignore_index=True)
-
-                    # # sequential
-                    # # department ID = did
-                    # for _, did in testing_info.iterrows():
-                    #     processed_test_data = processed_test_data.append(calculate_test_freq(did))
-
-                    # after the new testing information has been processed, we need to update the testing dataset
-                    for _, processed_point in processed_test_data.iterrows():
-                        # get the row index of the current specific processed test data
-                        # get the index of the same department and those encounter that happen previously to the current
-                        # testing encounter
-                        s_index = test_data[(test_data[encounter_type] ==
-                                             processed_point[encounter_type]) &
-                                            (test_data['ENCOUNTER_APPOINTMENT_DATETIME'] ==
-                                             processed_point['ENCOUNTER_APPOINTMENT_DATETIME'])].index.values[0]
-                        # modify its DEPARTMENT_[NOSHOW|CANCEL]_FREQUENCY value
-                        test_data.loc[s_index, frq_column] = processed_point[frq_column]
-
-                    load(test_dataset=test_data)
+                    update_test_dataset(unique_ids=unique_testing_in_training, enc_type=encounter_type,
+                                        frq_column=frq_column)
 
                 msg = 'finished processing {0} testing data'.format(frq_column)
                 logging.getLogger('tab.regular.time').debug(msg)
+
+
+def calculate_new_patient():
+
+    for postfix in ['PATIENT_KEY', 'ABBR', 'SPECIALTY']:
+
+        if 'PATIENT' not in postfix:
+            encounter_type = 'ENCOUNTER_DEPARTMENT_{0}'.format(postfix)
+        else:
+            encounter_type = postfix
+
+        # get the unique IDs because that's going to be the pivot column
+        unique_training_department_info = pd.DataFrame(train_data[encounter_type].unique(), columns=['data'])
+
+        frequency_column = list()
+        if 'ABBR' in postfix:
+            frequency_column = 'DEPARTMENT_NEW_PATIENT'
+        elif 'SPECIALTY' in postfix:
+            frequency_column = 'SPECIALTY_NEW_PATIENT'
+        elif 'PATIENT' in postfix:
+            frequency_column = 'NEW_PATIENT'
+
+        msg = 'processing {0} training data'.format(frequency_column)
+        logging.getLogger('tab.regular.time').info(msg)
+
+        # the resulting column data will be stored in this dataframe
+        processed_train_data = pd.DataFrame()
+        # other information passed to the function
+        unique_training_department_info['pivot_column'] = encounter_type
+        unique_training_department_info['freq_column'] = frequency_column
+
+        # multi-processed
+        pool = Pool(processes=10)
+        processed_train_data = processed_train_data.append(pool.map(
+            calculate_train_new, list(unique_training_department_info.values)), ignore_index=True)
+
+        # # sequential
+        # # department ID (did)
+        # for _, did in unique_training_department_info.iterrows():
+        #     processed_train_data = processed_train_data.append(calculate_train_new(did))
+
+        msg = 'finished processing {0} training data'.format(frequency_column)
+        logging.getLogger('tab.regular.time').info(msg)
+        # update the training dataset
+        load(train_dataset=processed_train_data)
+
+        unique_testing_department_ids = test_data[encounter_type].unique()
+
+        # obtaining the IDs that are in both the training and the testing dataset since those are the only ones
+        # that need processing
+        unique_testing_in_training = pd.unique(train_data[train_data[encounter_type].isin(
+            unique_testing_department_ids)][encounter_type])
+
+        msg = 'processing {0} testing data'.format(frequency_column)
+        logging.getLogger('tab.regular.time').info(msg)
+        # only go through the whole processing if there are common IDs in the training and testing dataset
+        if len(unique_testing_in_training) != 0:
+            update_test_dataset(unique_ids=unique_testing_in_training, enc_type=encounter_type,
+                                frq_column=frequency_column)
+
+        msg = 'finished processing {0} testing data'.format(frequency_column)
+        logging.getLogger('tab.regular.time').debug(msg)
 
 
 def process_data(dataset):
@@ -303,14 +388,12 @@ def process_data(dataset):
     x_test = test_data.assign(DEPARTMENT_NOSHOW_FRQ=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
-    # calculate_department_noshow_frequency()
 
     # DEPARTMENT_CANCEL_FRQ Cancellation Rate - Patient's historical cancellation rate by department
     x_train = train_data.assign(DEPARTMENT_CANCELED_FRQ=np.zeros(np.shape(train_data)[0]))
     x_test = test_data.assign(DEPARTMENT_CANCELED_FRQ=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
-    # calculate_department_cancel_frequency()
 
     # SPECIALTY_NOSHOW_FREQ No-show Rate Patient's historical no-show rate by department specialty
     x_train = train_data.assign(SPECIALTY_NOSHOW_FRQ=np.zeros(np.shape(train_data)[0]))
@@ -364,15 +447,28 @@ def process_data(dataset):
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
+    logging.getLogger('regular.time').info('running frequency function')
     calculate_frequencies()
+    logging.getLogger('regular.time').info('finished running frequency function')
 
-    # # New PATIENT_KEY to Department - Has patient visited department in past 24 months
-    # x_train = x_train.assign(DEPARTMENT_NEW_PATIENT=np.ones(np.shape(x_train)[0]))
-    # x_test = x_test.assign(DEPARTMENT_NEW_PATIENT=np.ones(np.shape(x_test)[0]))
-    #
-    # # Days Since PATIENT_KEY Last Appointment - Number of days since patient's previous appointment
-    # x_train = x_train.assign(PATIENT_LAST_APPT=np.ones(np.shape(x_train)[0]))
-    # x_test = x_test.assign(PATIENT_LAST_APPT=np.ones(np.shape(x_test)[0]))
+    # New PATIENT_KEY to Department - Has patient visited department in past 24 months
+    x_train = train_data.assign(NEW_PATIENT=np.zeros(np.shape(x_train)[0]))
+    x_test = test_data.assign(NEW_PATIENT=np.zeros(np.shape(x_test)[0]))
+    load(train_dataset=x_train, test_dataset=x_test)
+
+    # New ENCOUNTER_DEPARTMENT_ABBR to Department - Has department been visited department in past 24 months
+    x_train = train_data.assign(DEPARTMENT_NEW_PATIENT=np.zeros(np.shape(x_train)[0]))
+    x_test = test_data.assign(DEPARTMENT_NEW_PATIENT=np.zeros(np.shape(x_test)[0]))
+    load(train_dataset=x_train, test_dataset=x_test)
+
+    # New ENCOUNTER_DEPARTMENT_SPECIALTY to Department - Has specialty been visited department in past 24 months
+    x_train = train_data.assign(SPECIALTY_NEW_PATIENT=np.zeros(np.shape(x_train)[0]))
+    x_test = test_data.assign(SPECIALTY_NEW_PATIENT=np.zeros(np.shape(x_test)[0]))
+    load(train_dataset=x_train, test_dataset=x_test)
+
+    logging.getLogger('regular.time').info('running new patient function')
+    calculate_new_patient()
+    logging.getLogger('regular.time').info('finished running new patient function')
 
     logging.getLogger('regular').debug('training dataset shape = {0}'.format(x_train.shape))
     logging.getLogger('regular').debug('training dataset keys = {0}'.format(x_train.keys()))
@@ -411,6 +507,8 @@ def main():
 
     logger_initialization(log_level=args.logLevel)
 
+    logging.getLogger('regular.time').info('starting running pre-processing script')
+
     # import data from file
     dataset = load_data(args.input_file)
     # calculate relevant variables' values
@@ -426,6 +524,8 @@ def main():
 
     # save it
     store_dataset(training_dir=training_dir, testing_dir=testing_dir)
+
+    logging.getLogger('regular.time').info('finished running pre-processing script')
 
 
 if __name__ == '__main__':
