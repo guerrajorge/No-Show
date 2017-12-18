@@ -518,9 +518,12 @@ def main():
     testing_dir = args.test_file
 
     # if those variables are not pass, then populate them
-    if not (args.train_file and args.test_file):
+    if not (training_dir or testing_dir):
         training_dir = 'datasets/train_data_processed.csv'
         testing_dir = 'datasets/test_data_processed.csv'
+    else:
+        training_dir = 'datasets/' + training_dir + '.csv'
+        testing_dir = 'datasets/' + testing_dir + '.csv'
 
     # save it
     store_dataset(training_dir=training_dir, testing_dir=testing_dir)
