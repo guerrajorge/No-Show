@@ -8,17 +8,29 @@ from multiprocessing import Pool
 from sklearn.model_selection import train_test_split
 
 
-def load(train_dataset=pd.DataFrame(), test_dataset=pd.DataFrame):
+def load(train_dataset=pd.DataFrame(), test_dataset=pd.DataFrame(), train_directory='', test_directory=''):
+    """
+    This function is used to create and update all the global variables
+    """
     global train_data
     global test_data
+    global train_dir
+    global test_dir
 
     if not train_dataset.empty:
         train_data = train_dataset
     if not test_dataset.empty:
         test_data = test_dataset
+    if train_directory:
+        train_dir = train_directory
+    if test_directory:
+        test_dir = test_directory
 
 
-def store_dataset(training_dir='', testing_dir=''):
+def store_dataset():
+    """
+    This function is used to save the training and testing datasets
+    """
 
     logging.getLogger('regular').info('storing data')
 
@@ -28,8 +40,8 @@ def store_dataset(training_dir='', testing_dir=''):
     logging.getLogger('regular').debug('testing dataset shape (before storing) = {0}'.format(test_data.shape))
     logging.getLogger('regular').debug('testing dataset keys (before storing) = {0}'.format(test_data.keys()))
 
-    train_data.to_csv(training_dir, index=False, sep='|')
-    test_data.to_csv(testing_dir, index=False, sep='|')
+    train_data.to_csv(train_dir, index=False, sep='|')
+    test_data.to_csv(test_dir, index=False, sep='|')
 
 
 def calculate_train_freq(patient_info):
@@ -69,7 +81,6 @@ def calculate_train_freq(patient_info):
 
 
 def calculate_test_freq(patient_info):
-
     # id_value = patient_info['data']
     # pivot_column = patient_info['pivot_column']
     # freq_column = patient_info['freq_column']
@@ -102,7 +113,6 @@ def calculate_test_freq(patient_info):
 
 
 def calculate_train_rep(patient_info):
-
     # id_value = patient_info['data']
     # encounter_status = patient_info['status']
     # pivot_column = patient_info['pivot_column']
@@ -131,7 +141,6 @@ def calculate_train_rep(patient_info):
 
 
 def update_test_dataset(unique_ids, enc_type, frq_column):
-
     processed_test_data = pd.DataFrame()
 
     testing_info = pd.DataFrame(data=unique_ids, columns=['data'])
@@ -139,7 +148,7 @@ def update_test_dataset(unique_ids, enc_type, frq_column):
     testing_info['freq_column'] = frq_column
 
     # multi-processed
-    pool = Pool(processes=10)
+    pool = Pool(processes=30)
     processed_test_data = processed_test_data.append(pool.map(
         calculate_test_freq, list(testing_info.values)), ignore_index=True)
 
@@ -164,6 +173,11 @@ def update_test_dataset(unique_ids, enc_type, frq_column):
 
 
 def calculate_train_new(patient_info):
+    """
+    this function calculates the values for the given patient's column i.e.
+    :param patient_info:
+    :return:
+    """
     # id_value = patient_info['data']
     # pivot_column = patient_info['pivot_column']
     # freq_column = patient_info['freq_column']
@@ -203,22 +217,22 @@ def calculate_frequencies():
 
         # get the unique IDs because that's going to be the pivot column
         unique_training_department_info = pd.DataFrame(train_data[encounter_type].unique(), columns=['data'])
-        msg = 'obtaining frequencies for the NOSHOW and CANCEL status for the {0} information'.format(
-            encounter_type)
-        logging.getLogger('tab.regular').debug(msg)
 
         for status in ['NO SHOW', 'CANCELED']:
+
+            msg = 'obtaining frequencies for the {0} status for the {1} information'.format(status, encounter_type)
+            logging.getLogger('tab.regular').debug(msg)
 
             frequency_column = list()
             if 'ABBR' in postfix:
                 frequency_column.append('DEPARTMENT_{0}_FRQ'.format(status.replace(' ', '')))
-                frequency_column.append('NUM_{0}_DEPARTMENT'.format(status.replace(' ', '')))
+                frequency_column.append('DEPARTMENT_{0}_NUM'.format(status.replace(' ', '')))
             elif 'SPECIALTY' in postfix:
                 frequency_column.append('SPECIALTY_{0}_FRQ'.format(status.replace(' ', '')))
-                frequency_column.append('NUM_{0}_SPECIALTY'.format(status.replace(' ', '')))
+                frequency_column.append('SPECIALTY_{0}_NUM'.format(status.replace(' ', '')))
             elif 'PATIENT' in postfix:
                 frequency_column.append('PATIENT_{0}_FRQ'.format(status.replace(' ', '')))
-                frequency_column.append('NUM_{0}_PATIENT'.format(status.replace(' ', '')))
+                frequency_column.append('PATIENT_{0}_NUM'.format(status.replace(' ', '')))
 
             for frq_column in frequency_column:
 
@@ -234,7 +248,7 @@ def calculate_frequencies():
 
                 if 'FRQ' in frq_column:
                     # multi-processed
-                    pool = Pool(processes=10)
+                    pool = Pool(processes=30)
                     processed_train_data = processed_train_data.append(pool.map(
                         calculate_train_freq, list(unique_training_department_info.values)), ignore_index=True)
 
@@ -245,7 +259,7 @@ def calculate_frequencies():
                 else:
 
                     # multi-processed
-                    pool = Pool(processes=10)
+                    pool = Pool(processes=30)
                     processed_train_data = processed_train_data.append(pool.map(
                         calculate_train_rep, list(unique_training_department_info.values)), ignore_index=True)
 
@@ -258,8 +272,6 @@ def calculate_frequencies():
                 logging.getLogger('tab.regular.time').info(msg)
                 # update the training dataset
                 load(train_dataset=processed_train_data)
-
-                processed_train_data = ''
 
                 unique_testing_department_ids = test_data[encounter_type].unique()
 
@@ -280,6 +292,10 @@ def calculate_frequencies():
 
 
 def calculate_new_patient():
+    """
+    This function assigns whether a patients is new or not for the hospital, department or specialty
+    Updates the training and testing variables
+    """
 
     for postfix in ['PATIENT_KEY', 'ABBR', 'SPECIALTY']:
 
@@ -341,7 +357,10 @@ def calculate_new_patient():
         logging.getLogger('tab.regular.time').debug(msg)
 
 
-def process_data(dataset):
+def process_dataset(dataset):
+    """
+    This function will create and calculate the engineered independent variables
+    """
     logging.getLogger('regular').info('processing data')
 
     # encode class values as integers
@@ -355,11 +374,11 @@ def process_data(dataset):
         dataset_floats[key] = encoder.fit_transform(dataset[key])
 
     # remove every row that is missing a value
-    # dataset_floats.dropna(axis=0, inplace=True)
+    dataset_floats.dropna(axis=0, inplace=True)
 
     dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'] = pd.to_datetime(dataset_floats['ENCOUNTER_APPOINTMENT_DATETIME'])
 
-    logging.getLogger('regular').info('creating training and testing dataset')
+    logging.getLogger('regular').info('creating tra ining and testing dataset')
     x_train, x_test = train_test_split(dataset_floats, test_size=0.33, random_state=42)
 
     # Make sure all the data are sorted based on the date of the encounter
@@ -408,42 +427,42 @@ def process_data(dataset):
     load(train_dataset=x_train, test_dataset=x_test)
 
     # Consecutive No-shows By PATIENT_KEY- Number of most recent consecutive no-shows patient has accrued
-    x_train = train_data.assign(NUM_NOSHOW_PATIENT=np.zeros(np.shape(train_data)[0]))
-    x_test = test_data.assign(NUM_NOSHOW_PATIENT=np.zeros(np.shape(test_data)[0]))
+    x_train = train_data.assign(PATIENT_NOSHOW_NUM=np.zeros(np.shape(train_data)[0]))
+    x_test = test_data.assign(PATIENT_NOSHOW_NUM=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
     # Consecutive No-shows By ENCOUNTER_DEPARTMENT_ABBR - Number of most recent consecutive no-shows patient
     # has accrued by department
-    x_train = train_data.assign(NUM_NOSHOW_DEPARTMENT=np.zeros(np.shape(train_data)[0]))
-    x_test = test_data.assign(NUM_NOSHOW_DEPARTMENT=np.zeros(np.shape(test_data)[0]))
+    x_train = train_data.assign(DEPARTMENT_NOSHOW_NUM=np.zeros(np.shape(train_data)[0]))
+    x_test = test_data.assign(DEPARTMENT_NOSHOW_NUM=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
     # Consecutive No-shows By ENCOUNTER_DEPARTMENT_SPECIALTY - Number of most recent consecutive no-shows patient
     # has accrued by specialty
-    x_train = train_data.assign(NUM_NOSHOW_SPECIALTY=np.zeros(np.shape(train_data)[0]))
-    x_test = test_data.assign(NUM_NOSHOW_SPECIALTY=np.zeros(np.shape(test_data)[0]))
+    x_train = train_data.assign(SPECIALTY_NOSHOW_NUM=np.zeros(np.shape(train_data)[0]))
+    x_test = test_data.assign(SPECIALTY_NOSHOW_NUM=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
     # Consecutive canceled By PATIENT_KEY- Number of most recent consecutive no-shows patient has accrued
-    x_train = train_data.assign(NUM_CANCELED_PATIENT=np.zeros(np.shape(train_data)[0]))
-    x_test = test_data.assign(NUM_CANCELED_PATIENT=np.zeros(np.shape(test_data)[0]))
+    x_train = train_data.assign(PATIENT_CANCELED_NUM=np.zeros(np.shape(train_data)[0]))
+    x_test = test_data.assign(PATIENT_CANCELED_NUM=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
     # Consecutive No-shows By ENCOUNTER_DEPARTMENT_ABBR - Number of most recent consecutive canceled patient
     # has accrued by department
-    x_train = train_data.assign(NUM_CANCELED_DEPARTMENT=np.zeros(np.shape(train_data)[0]))
-    x_test = test_data.assign(NUM_CANCELED_DEPARTMENT=np.zeros(np.shape(test_data)[0]))
+    x_train = train_data.assign(DEPARTMENT_CANCELED_NUM=np.zeros(np.shape(train_data)[0]))
+    x_test = test_data.assign(DEPARTMENT_CANCELED_NUM=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
     # Consecutive No-shows By ENCOUNTER_DEPARTMENT_SPECIALTY - Number of most recent consecutive canceled patient
     # has accrued by specialty
-    x_train = train_data.assign(NUM_CANCELED_SPECIALTY=np.zeros(np.shape(train_data)[0]))
-    x_test = test_data.assign(NUM_CANCELED_SPECIALTY=np.zeros(np.shape(test_data)[0]))
+    x_train = train_data.assign(SPECIALTY_CANCELED_NUM=np.zeros(np.shape(train_data)[0]))
+    x_test = test_data.assign(SPECIALTY_CANCELED_NUM=np.zeros(np.shape(test_data)[0]))
     # update and populate the column with the right values
     load(train_dataset=x_train, test_dataset=x_test)
 
@@ -477,7 +496,6 @@ def process_data(dataset):
 
 
 def load_data(input_file):
-
     logging.getLogger('regular').info('reading data from file')
     dataset = pd.read_csv(filepath_or_buffer=input_file, delimiter='|')
 
@@ -495,7 +513,6 @@ def load_data(input_file):
 
 
 def main():
-
     # get the the path for the input file argument
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input_file', help='dataset file that has not being processed')
@@ -506,13 +523,6 @@ def main():
     args = parser.parse_args()
 
     logger_initialization(log_level=args.logLevel)
-
-    logging.getLogger('regular.time').info('starting running pre-processing script')
-
-    # import data from file
-    dataset = load_data(args.input_file)
-    # calculate relevant variables' values
-    process_data(dataset=dataset)
 
     training_dir = args.train_file
     testing_dir = args.test_file
@@ -525,8 +535,17 @@ def main():
         training_dir = 'datasets/' + training_dir + '.csv'
         testing_dir = 'datasets/' + testing_dir + '.csv'
 
+    load(train_directory=training_dir, test_directory=testing_dir)
+
+    logging.getLogger('regular.time').info('starting running pre-processing script')
+
+    # import data from file
+    dataset = load_data(args.input_file)
+    # calculate relevant variables' values
+    process_dataset(dataset=dataset, train_dir=training_dir, test_dir=testing_dir)
+
     # save it
-    store_dataset(training_dir=training_dir, testing_dir=testing_dir)
+    store_dataset()
 
     logging.getLogger('regular.time').info('finished running pre-processing script')
 
