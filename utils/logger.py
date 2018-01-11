@@ -16,13 +16,12 @@ class DispatchingFormatter:
 
 def logger_initialization(log_level):
 
-    log_level = log_level.upper()
-
     # logLevel = ['DEBUG', 'INFO', 'ERROR']
     # no logLevel, default to INFO
     if not log_level:
         logging.getLogger().setLevel(getattr(logging, 'INFO'))
     else:
+        log_level = log_level.upper()
         logging.getLogger().setLevel(getattr(logging, log_level))
 
     # not only log to a file but to stdout
